@@ -1,6 +1,13 @@
 # smartplug-bot
 Telegram bot, which notifies about power consumers
 
+Download code
+````
+git clone https://github.com/oheim/smartplug-bot.git
+cd smartplug-bot
+git submodule update --init
+````
+
 Install dependencies
 ````
 pip3 install python-telegram-bot --upgrade
