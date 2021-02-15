@@ -141,11 +141,11 @@ def apply_schedule():
     if close_now:
         if not (is_closed is None):
             bot_send('Markise wird automatisch geschlossen')
-        device.set_value('close')
+        device.set_value(1, 'close')
     else:
         if not (is_closed is None):
             bot_send('Markise wird automatisch geöffnet')
-        device.set_value('open')
+        device.set_value(1, 'open')
     is_closed = close_now
 
 
