@@ -38,8 +38,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 background = timeloop.Timeloop()
 
-tinytuya.set_debug()
-
 is_closed = None
 @background.job(interval = datetime.timedelta(seconds = 5))
 def update_device_status():
