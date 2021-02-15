@@ -24,7 +24,6 @@ from wetterdienst.dwd.forecasts import DWDMosmixParameter, DWDMosmixStations
 from pandas import DataFrame
 import datetime
 import time
-import json
 import timeloop
 import logging
 import sys
@@ -51,7 +50,7 @@ def update_device_status():
     device = tinytuya.CoverDevice(config['DEVICE_ID'], hostname, config['LOCAL_KEY'])
     device.set_version(3.3)
     device.set_socketRetryLimit(120)
-    status = json.loads(device.status())
+    status = device.status()
     if status['dps']['1'] == 'close':
         if not is_closed:
             logging.info('Markise wird manuell geschlossen')
@@ -130,7 +129,7 @@ def apply_schedule():
     device = tinytuya.CoverDevice(config['DEVICE_ID'], hostname, config['LOCAL_KEY'])
     device.set_version(3.3)
     device.set_socketRetryLimit(5)
-    status = json.loads(device.status())
+    status = device.status()
     if status['dps']['1'] != 'stop':
         # Do nothing if the device is operating right now
         return
