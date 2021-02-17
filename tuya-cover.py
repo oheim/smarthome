@@ -66,7 +66,7 @@ def update_device_status():
             
 
 schedule = None
-@background.job(interval = datetime.timedelta(minutes = 15))
+@background.job(interval = datetime.timedelta(hours = 3))
 def update_schedule():
     global schedule
     global config
@@ -74,7 +74,6 @@ def update_schedule():
     logging.info('Aktualisiere Wettervorhersage ...')
     
     try:
-        local_stations = DWDMosmixStations().nearby_number(float(config['LATITUDE']), float(config['LONGITUDE']), 5)
         
         parameters = [
                 DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H,
@@ -84,7 +83,7 @@ def update_schedule():
                 DWDMosmixParameter.TEMPERATURE_AIR_200]
         
         mosmix = wetterdienst.dwd.forecasts.DWDMosmixValues(
-                station_id = local_stations['STATION_ID'].to_list(),
+                station_id = config['STATION_ID'],
                 mosmix_type = wetterdienst.dwd.forecasts.DWDMosmixType.LARGE,
                 start_issue = wetterdienst.dwd.forecasts.metadata.dates.DWDForecastDate.LATEST,
                 parameter = parameters
