@@ -29,6 +29,8 @@ import logging
 import sys
 import dotenv
 import telegram.ext
+import astral
+import astral.sun
 
 hostname = sys.argv[1]
 config = dotenv.dotenv_values("Markise.env")
@@ -53,11 +55,11 @@ def update_device_status():
         status = device.status()
         if status['dps']['1'] == 'close':
             if not is_closed:
-                logging.info('Markise wird manuell geschlossen')
+                logging.info('Markise wird manuell ausgefahren')
                 is_closed = True
         elif status['dps']['1'] == 'open':
             if is_closed:
-                logging.info('Markise wird manuell geöffnet')
+                logging.info('Markise wird manuell eingefahren')
                 is_closed = False
         # else:
             #unknown
@@ -70,8 +72,6 @@ schedule = None
 def update_schedule():
     global schedule
     global config
-    
-    logging.info('Aktualisiere Wettervorhersage ...')
     
     try:
         
@@ -117,6 +117,14 @@ def update_schedule():
         # Open, if below dew point to protect from moisture
         local_schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value]] = False
         
+        # Open at sunset
+        sunset = astral.sun.sunset(
+                astral.Observer(
+                        latitude = config['LATITUDE'],
+                        longitude = config['LONGITUDE']))
+        local_schedule.loc[sunset] = False
+        local_schedule.sort_index()
+        
         # Update global variable
         schedule = local_schedule
     
@@ -151,11 +159,11 @@ def apply_schedule():
     
         if close_now:
             if not (is_closed is None):
-                bot_send('Markise wird automatisch geschlossen')
+                bot_send('Die Markise wird ausgefahren.')
             device.set_value(1, 'close')
         else:
             if not (is_closed is None):
-                bot_send('Markise wird automatisch geöffnet')
+                bot_send('Die Markise wird eingefahren.')
             device.set_value(1, 'open')
         is_closed = close_now
         
