@@ -117,13 +117,21 @@ def update_schedule():
         # Open, if below dew point to protect from moisture
         local_schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value]] = False
         
-        # Open at sunset
-        sunset = astral.sun.sunset(
-                astral.Observer(
+        observer = astral.Observer(
                         latitude = config['LATITUDE'],
-                        longitude = config['LONGITUDE']))
-        local_schedule.loc[sunset] = False
-        local_schedule.sort_index()
+                        longitude = config['LONGITUDE'])
+
+        # Don't close before sunrise
+        sunrise = astral.sun.sunrise(observer)
+        local_schedule.loc[sunrise] = False
+        
+        # Open at sunset
+        sunset = astral.sun.sunset(observer)
+        index_after_sunset = local_schedule.index.where(local_schedule.index.to_pydatetime() > sunset).min()
+        local_schedule.loc[sunset] = local_schedule.loc[index_after_sunset]
+        local_schedule.loc[index_after_sunset] = False
+
+        local_schedule = local_schedule.sort_index()
         
         # Update global variable
         schedule = local_schedule
