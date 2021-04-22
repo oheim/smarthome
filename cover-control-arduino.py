@@ -49,7 +49,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 background = timeloop.Timeloop()
 
 schedule = None
-@background.job(interval = datetime.timedelta(hours = 3))
+@background.job(interval = datetime.timedelta(hours = 2))
 def update_schedule():
     global schedule
     global config

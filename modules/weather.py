@@ -32,7 +32,10 @@ parameters = [
         DWDMosmixParameter.WIND_GUST_MAX_LAST_1H,
         DWDMosmixParameter.SUNSHINE_DURATION,
         DWDMosmixParameter.TEMPERATURE_DEW_POINT_200,
-        DWDMosmixParameter.TEMPERATURE_AIR_200]
+        DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200,
+        DWDMosmixParameter.TEMPERATURE_AIR_200,
+        DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200,
+        DWDMosmixParameter.CLOUD_COVER_EFFECTIVE]
 
 def get_sunscreen_schedule(station_ids, latitude, longitude):
     mosmix = DWDMosmixValues(
@@ -54,7 +57,10 @@ def get_sunscreen_schedule(station_ids, latitude, longitude):
             DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value: 'max',
             DWDMosmixParameter.SUNSHINE_DURATION.value: 'max',
             DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value: 'max',
-            DWDMosmixParameter.TEMPERATURE_AIR_200.value: 'min'
+            DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value: 'max',
+            DWDMosmixParameter.TEMPERATURE_AIR_200.value: 'min',
+            DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value: 'max',
+            DWDMosmixParameter.CLOUD_COVER_EFFECTIVE.value: 'min'
             })
     
     # Default = leave open
@@ -64,11 +70,13 @@ def get_sunscreen_schedule(station_ids, latitude, longitude):
     # Open, if windy
     schedule[forecast_agg[DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value] > 10] = False
     # Open, if rainy
-    schedule[forecast_agg[DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 50.0] = False
+    schedule[forecast_agg[DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 40.0] = False
+    # Open, if cloudy
+    schedule[forecast_agg[DWDMosmixParameter.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0] = False
     # Open, if below 4°C to protect from ice and snow
-    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] < 277.15] = False
-    # Open, if below dew point to protect from moisture
-    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value]] = False
+    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] - forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value] < 277.15] = False
+    # Open, if not certainly above dew point to protect from moisture
+    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] + forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] - forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]] = False
     
     observer = astral.Observer(latitude = latitude, longitude = longitude)
 
