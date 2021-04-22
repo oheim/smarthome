@@ -12,16 +12,17 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+*/
 
-   
-Moves the curtain in the desired position.
+/* 
+Moves the sunscreen in the desired position.
 
 Listen on UDP port 8888 for commands 'open' and 'close'.
 
-The user may override the curtain position via PINs 6 and 8.
+The user may override the curtain position via PINs 6 and 8 (e. g. install a
+wall switch).
 
 The remote control for the curtain is connected to PINs 2 and 5.
-
 */
 
 #include <Ethernet.h>

@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Copyright 2021 Oliver Heimlich <oheim@posteo.de>
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+# Copyright 2021 Oliver Heimlich <oheim@posteo.de>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-   http://www.apache.org/licenses/LICENSE-2.0
+"""Control program for a window sunscreen
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+This script sends the optimal sunscreen position over network (UDP) to a
+microcontroller (Arduino with ethernet shield).  The microcontroller supports
+manual override with a hardware switch and triggers a remote control to send
+radio commands to move the sunscreen.
+
+Find the arduino code in cover-control-arduino.ino.
+
+The optimal sunscreen position is based on a weather forecast, which we
+retrieve for a nearby weather station by DWD (Deutscher Wetterdienst).
    
 @author: Oliver Heimlich <oheim@posteo.de>
 """
