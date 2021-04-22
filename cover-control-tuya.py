@@ -28,19 +28,14 @@ retrieve for a nearby weather station by DWD (Deutscher Wetterdienst).
 """
 
 import tinytuya
-import wetterdienst
-from wetterdienst.dwd.forecasts import DWDMosmixParameter, DWDMosmixStations
-from pandas import DataFrame
 import datetime
 import time
 import timeloop
 import logging
 import sys
 import dotenv
-import astral
-import astral.sun
 
-from modules import telegram
+from modules import telegram, weather
 
 hostname = sys.argv[1]
 config = dotenv.dotenv_values("Sunscreen-tuya.env")
@@ -84,68 +79,7 @@ def update_schedule():
     global config
     
     try:
-        
-        parameters = [
-                DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H,
-                DWDMosmixParameter.WIND_GUST_MAX_LAST_1H,
-                DWDMosmixParameter.SUNSHINE_DURATION,
-                DWDMosmixParameter.TEMPERATURE_DEW_POINT_200,
-                DWDMosmixParameter.TEMPERATURE_AIR_200]
-        
-        mosmix = wetterdienst.dwd.forecasts.DWDMosmixValues(
-                station_id = config['STATION_ID'],
-                mosmix_type = wetterdienst.dwd.forecasts.DWDMosmixType.LARGE,
-                start_issue = wetterdienst.dwd.forecasts.metadata.dates.DWDForecastDate.LATEST,
-                parameter = parameters
-                )
-        
-        # Read data
-        forecast = mosmix.all().dropna().pivot(
-                index = ['DATE', 'STATION_ID'],
-                columns = 'PARAMETER',
-                values = 'VALUE')
-        
-        # Aggregate over all stations (use pessimistic values)
-        forecast_agg = forecast.groupby('DATE').agg({
-                DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value: 'max',
-                DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value: 'max',
-                DWDMosmixParameter.SUNSHINE_DURATION.value: 'max',
-                DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value: 'max',
-                DWDMosmixParameter.TEMPERATURE_AIR_200.value: 'min'
-                })
-        
-        # Default = leave open
-        local_schedule = DataFrame(False, index = forecast_agg.index, columns=['CLOSE'])
-        # Close, if more than 5 Minutes sunshine per hour
-        local_schedule[forecast_agg[DWDMosmixParameter.SUNSHINE_DURATION.value] > 5 * 60] = True
-        # Open, if windy
-        local_schedule[forecast_agg[DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value] > 10] = False
-        # Open, if rainy
-        local_schedule[forecast_agg[DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 50.0] = False
-        # Open, if below 4°C to protect from ice and snow
-        local_schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] < 277.15] = False
-        # Open, if below dew point to protect from moisture
-        local_schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value]] = False
-        
-        observer = astral.Observer(
-                        latitude = config['LATITUDE'],
-                        longitude = config['LONGITUDE'])
-
-        # Don't close before sunrise
-        sunrise = astral.sun.sunrise(observer)
-        local_schedule.loc[sunrise] = False
-        
-        # Open at sunset
-        sunset = astral.sun.sunset(observer)
-        index_after_sunset = local_schedule.index.where(local_schedule.index.to_pydatetime() > sunset).min()
-        local_schedule.loc[sunset] = local_schedule.loc[index_after_sunset]
-        local_schedule.loc[index_after_sunset] = False
-
-        local_schedule = local_schedule.sort_index()
-        
-        # Update global variable
-        schedule = local_schedule
-    
+        schedule = weather.get_sunscreen_schedule(config['STATION_ID'], config['LATITUDE'], config['LONGITUDE'])
         logging.info('Wettervorhersage aktualisiert')
         
     except:
