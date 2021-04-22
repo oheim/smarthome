@@ -22,5 +22,5 @@ Create config file `[Device Name].env` (you may copy `Washer.env.template`).
 
 Start monitor script
 ````
-python3 monitor.py [device hostname]
+python3 energy-monitor.py [device hostname]
 ````
