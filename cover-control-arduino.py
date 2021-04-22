@@ -40,9 +40,10 @@ import timeloop
 import logging
 import sys
 import dotenv
-import telegram.ext
 import astral
 import astral.sun
+
+from modules import telegram
 
 hostname = sys.argv[1]
 config = dotenv.dotenv_values("Sunscreen-arduino.env")
@@ -160,21 +161,7 @@ def apply_schedule():
 update_schedule()
 
 
-updater = telegram.ext.Updater(token=config['BOT_TOKEN'])
-
-def bot_start(update, context):
-    logging.info("New message in chat %d", update.effective_chat.id)
-    context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a bot, please talk to me!")
-
-def bot_send(message):
-    global updater
-    global config
-    
-    updater.bot.send_message(chat_id=int(config['CHAT_ID']), text=message)
-
-updater.dispatcher.add_handler(telegram.ext.CommandHandler('start', bot_start))
-
-updater.start_polling()
+telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
 
 background.start()
 
@@ -183,4 +170,4 @@ try:
         time.sleep(1)
 finally:
     background.stop()
-    updater.stop()
+    telegram.bot_stop()

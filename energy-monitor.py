@@ -28,10 +28,11 @@ import subprocess
 import json
 import sys
 import time
-import telegram.ext
 import logging
 import locale
 import dotenv
+
+from modules import telegram
 
 hostname = sys.argv[1]
 
@@ -127,31 +128,13 @@ devicename = read_info(hostname)
 
 config = dotenv.dotenv_values(devicename + ".env")
 
-updater = telegram.ext.Updater(token=config['BOT_TOKEN'])
-
-def bot_start(update, context):
-    logging.info("New message in chat %d", update.effective_chat.id)
-    context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a bot, please talk to me!")
-
-def bot_error(update, context):
-    logging.exception('Error in telegram bot', exc_info = context.error)
-    if isinstance(context.error, telegram.error.NetworkError):
-        updater.stop()
-        time.sleep(2)
-        updater.start_polling()
-    
-
-updater.dispatcher.add_handler(telegram.ext.CommandHandler('start', bot_start))
-updater.dispatcher.add_error_handler(bot_error)
-
-updater.start_polling()
+telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
 
 try:
     while True:
         cycle_cost = wait_full_cycle(hostname, float(config['POWER_COST']))
         message = config['MESSAGE_TEMPLATE'].format(cycle_cost)
         logging.info(message)
-        updater.bot.send_message(chat_id=int(config['CHAT_ID']),
-                                 text=message)
+        telegram.bot_send(text=message)
 finally:
-    updater.stop()
+    telegram.bot_stop()
