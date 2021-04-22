@@ -26,7 +26,7 @@ Find the arduino code in cover-control-arduino.ino.
 
 The optimal sunscreen position is based on a weather forecast, which we
 retrieve for a nearby weather station by DWD (Deutscher Wetterdienst).
-   
+
 @author: Oliver Heimlich <oheim@posteo.de>
 """
 
