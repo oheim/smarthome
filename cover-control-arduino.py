@@ -45,7 +45,7 @@ import astral
 import astral.sun
 
 hostname = sys.argv[1]
-config = dotenv.dotenv_values("Markise.env")
+config = dotenv.dotenv_values("Sunscreen-arduino.env")
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
