@@ -63,5 +63,10 @@ def bot_stop():
     updater.stop()
 
 
-def bot_send(text, chat_id = default_chat_id):
+def bot_send(text, chat_id = None):
+    global default_chat_id
+    
+    if chat_id is None:
+        chat_id = default_chat_id
+        
     updater.bot.send_message(chat_id, text)
