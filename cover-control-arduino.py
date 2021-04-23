@@ -55,7 +55,7 @@ def update_schedule():
     global config
     
     try:
-        schedule = weather.get_sunscreen_schedule(config['STATION_ID'], config['LATITUDE'], config['LONGITUDE'])
+        schedule = weather.get_sunscreen_schedule(config['STATION_IDS'].split(','), config['LATITUDE'], config['LONGITUDE'])
         logging.info('Wettervorhersage aktualisiert')
         
     except:
