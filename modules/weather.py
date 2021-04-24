@@ -66,14 +66,14 @@ def get_sunscreen_schedule(latitude, longitude):
             })
     
     # Default = leave open
-    schedule = pd.DataFrame({'CLOSE': False, 'REASON': '🌤'}, index = forecast.index, columns=['CLOSE', 'REASON'])
+    schedule = pd.DataFrame({'CLOSE': False, 'REASON': '⛅️'}, index = forecast.index, columns=['CLOSE', 'REASON'])
     
     # Close, if more than 5 Minutes sunshine per hour
     sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] > 5 * 60
     schedule[sunny_idx] = [True, '☀️']
     
     cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
-    schedule[cloudy_idx] = [False, '🌥']
+    schedule[cloudy_idx] = [False, '☁️']
     
     dewy_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]
     schedule[dewy_idx] = [False, '🌫']
