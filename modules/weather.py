@@ -55,7 +55,11 @@ def get_sunscreen_schedule(latitude, longitude):
     
     # Aggregate over all stations (use pessimistic values)
     forecast = forecast.groupby('datetime').agg({
-            DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value: 'max',
+            DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.PROBABILITY_THUNDERSTORM_LAST_1H.value: 'max',
             DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value: 'max',
             DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value: 'max',
             DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value: 'max',
@@ -75,7 +79,7 @@ def get_sunscreen_schedule(latitude, longitude):
     cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
     schedule[cloudy_idx] = [False, '☁️']
     
-    dewy_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]
+    dewy_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] > 40.0)
     schedule[dewy_idx] = [False, '🌫']
     
     cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value] < 277.15
@@ -84,8 +88,11 @@ def get_sunscreen_schedule(latitude, longitude):
     windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 10
     schedule[windy_idx] = [False, '💨']
     
-    rainy_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 40.0
+    rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 40.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 120)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 40.0)
     schedule[rainy_idx] = [False, '🌧']
+    
+    thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDERSTORM_LAST_1H.value] > 40.0
+    schedule[thundery_idx] = [False, '⛈']
     
     # Don't close before sunrise
     sunrise = astral.sun.sunrise(observer)
