@@ -55,7 +55,7 @@ def update_schedule():
     global config
     
     try:
-        schedule = weather.get_sunscreen_schedule(config['STATION_IDS'].split(','), config['LATITUDE'], config['LONGITUDE'])
+        schedule = weather.get_sunscreen_schedule(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
         logging.info('Wettervorhersage aktualisiert')
         
     except:
@@ -78,14 +78,15 @@ def apply_schedule():
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
+        reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
 
         if close_now:
             if is_closed == False:
-                telegram.bot_send('Die Markise wird ausgefahren.')
+                telegram.bot_send('Die Markise wird ausgefahren ' + reason)
             send_command('close')
         else:
             if is_closed == True:
-                telegram.bot_send('Die Markise wird eingefahren.')
+                telegram.bot_send('Die Markise wird eingefahren ' + reason)
             send_command('open')
         is_closed = close_now
         
@@ -94,8 +95,9 @@ def apply_schedule():
 
 update_schedule()
 
-
 telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
+
+apply_schedule()
 
 background.start()
 

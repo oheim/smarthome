@@ -19,77 +19,84 @@
 @author: Oliver Heimlich <oheim@posteo.de>
 """
 
-from wetterdienst.dwd.forecasts import DWDMosmixParameter, DWDMosmixValues, DWDMosmixType
-from wetterdienst.dwd.forecasts.metadata.dates import DWDForecastDate
-
-from pandas import DataFrame
+from wetterdienst import Wetterdienst
+from wetterdienst.provider.dwd.forecast import DwdMosmixType, DwdForecastDate
+from wetterdienst.provider.dwd.forecast.metadata import DwdMosmixParameter
 
 import astral
 import astral.sun
 
-parameters = [
-        DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H,
-        DWDMosmixParameter.WIND_GUST_MAX_LAST_1H,
-        DWDMosmixParameter.SUNSHINE_DURATION,
-        DWDMosmixParameter.TEMPERATURE_DEW_POINT_200,
-        DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200,
-        DWDMosmixParameter.TEMPERATURE_AIR_200,
-        DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200,
-        DWDMosmixParameter.CLOUD_COVER_EFFECTIVE]
+import pandas as pd
 
-def get_sunscreen_schedule(station_ids, latitude, longitude):
-    mosmix = DWDMosmixValues(
-            station_id = station_ids,
-            mosmix_type = DWDMosmixType.LARGE,
-            start_issue = DWDForecastDate.LATEST,
-            parameter = parameters
-            )
+observer = None
+local_stations = None
+
+def set_location(latitude, longitude):
+    global local_stations
+    global observer
     
-    # Read data
-    forecast = mosmix.all().dropna().pivot(
-            index = ['DATE', 'STATION_ID'],
-            columns = 'PARAMETER',
-            values = 'VALUE')
+    api = Wetterdienst(provider = 'dwd', kind = 'forecast')
+    
+    stations = api(parameter="large", mosmix_type=DwdMosmixType.LARGE)
+    
+    local_stations = stations.filter_by_rank(latitude=latitude, longitude=longitude, rank=2)
+    observer = astral.Observer(latitude=latitude, longitude=longitude)
+
+def get_sunscreen_schedule(latitude, longitude):
+    global local_stations
+    global observer
+    
+    if observer is None or observer.latitude != latitude or observer.longitude != longitude:
+        set_location(latitude, longitude)
+    
+    forecast = pd.DataFrame()
+    for station_forecast in local_stations.values.read_mosmix_large(DwdForecastDate.LATEST):
+        forecast = forecast.append(station_forecast)
     
     # Aggregate over all stations (use pessimistic values)
-    forecast_agg = forecast.groupby('DATE').agg({
-            DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value: 'max',
-            DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value: 'max',
-            DWDMosmixParameter.SUNSHINE_DURATION.value: 'max',
-            DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value: 'max',
-            DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value: 'max',
-            DWDMosmixParameter.TEMPERATURE_AIR_200.value: 'min',
-            DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value: 'max',
-            DWDMosmixParameter.CLOUD_COVER_EFFECTIVE.value: 'min'
+    forecast = forecast.groupby('datetime').agg({
+            DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value: 'max',
+            DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value: 'max',
+            DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value: 'max',
+            DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value: 'max',
+            DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value: 'min',
+            DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value: 'max',
+            DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value: 'min'
             })
     
     # Default = leave open
-    schedule = DataFrame(False, index = forecast_agg.index, columns=['CLOSE'])
-    # Close, if more than 5 Minutes sunshine per hour
-    schedule[forecast_agg[DWDMosmixParameter.SUNSHINE_DURATION.value] > 5 * 60] = True
-    # Open, if windy
-    schedule[forecast_agg[DWDMosmixParameter.WIND_GUST_MAX_LAST_1H.value] > 10] = False
-    # Open, if rainy
-    schedule[forecast_agg[DWDMosmixParameter.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 40.0] = False
-    # Open, if cloudy
-    schedule[forecast_agg[DWDMosmixParameter.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0] = False
-    # Open, if below 4°C to protect from ice and snow
-    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] - forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value] < 277.15] = False
-    # Open, if not certainly above dew point to protect from moisture
-    schedule[forecast_agg[DWDMosmixParameter.TEMPERATURE_DEW_POINT_200.value] + forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast_agg[DWDMosmixParameter.TEMPERATURE_AIR_200.value] - forecast_agg[DWDMosmixParameter.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]] = False
+    schedule = pd.DataFrame({'CLOSE': False, 'REASON': '🌤'}, index = forecast.index, columns=['CLOSE', 'REASON'])
     
-    observer = astral.Observer(latitude = latitude, longitude = longitude)
-
+    # Close, if more than 5 Minutes sunshine per hour
+    sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] > 5 * 60
+    schedule[sunny_idx] = [True, '☀️']
+    
+    cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
+    schedule[cloudy_idx] = [False, '🌥']
+    
+    dewy_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value]
+    schedule[dewy_idx] = [False, '🌫']
+    
+    cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_200.value] < 277.15
+    schedule[cold_idx] = [False, '❄️']
+    
+    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 10
+    schedule[windy_idx] = [False, '💨']
+    
+    rainy_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_GT_0_1_MM_LAST_1H.value] > 40.0
+    schedule[rainy_idx] = [False, '🌧']
+    
     # Don't close before sunrise
     sunrise = astral.sun.sunrise(observer)
-    schedule.loc[sunrise] = False
+    schedule.loc[sunrise] = [False, '🌙']
     
     # Open at sunset
     sunset = astral.sun.sunset(observer)
     index_after_sunset = schedule.index.where(schedule.index.to_pydatetime() > sunset).min()
     schedule.loc[sunset] = schedule.loc[index_after_sunset]
-    schedule.loc[index_after_sunset] = False
-
-    schedule = schedule.sort_index()
+    schedule.loc[index_after_sunset] = [False, '🌙']
     
+    schedule = schedule.sort_index()
+
     return schedule

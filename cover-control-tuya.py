@@ -79,7 +79,7 @@ def update_schedule():
     global config
     
     try:
-        schedule = weather.get_sunscreen_schedule(config['STATION_ID'], config['LATITUDE'], config['LONGITUDE'])
+        schedule = weather.get_sunscreen_schedule(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
         logging.info('Wettervorhersage aktualisiert')
         
     except:
@@ -104,6 +104,8 @@ def apply_schedule():
             # Nothing to do
             return
 
+        reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
+
         status = device.status()
         if status['dps']['1'] != 'stop':
             # Do nothing if the device is operating right now
@@ -111,11 +113,11 @@ def apply_schedule():
     
         if close_now:
             if not (is_closed is None):
-                telegram.bot_send('Die Markise wird ausgefahren.')
+                telegram.bot_send('Die Markise wird ausgefahren ' + reason)
             device.set_value(1, 'close')
         else:
             if not (is_closed is None):
-                telegram.bot_send('Die Markise wird eingefahren.')
+                telegram.bot_send('Die Markise wird eingefahren ' + reason)
             device.set_value(1, 'open')
         is_closed = close_now
         
@@ -124,8 +126,10 @@ def apply_schedule():
 
 update_schedule()
 
-
 telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
+
+update_device_status()
+apply_schedule()
 
 background.start()
 
