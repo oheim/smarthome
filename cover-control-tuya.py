@@ -77,13 +77,41 @@ schedule = None
 def update_schedule():
     global schedule
     global config
+    global radar_rain
     
     try:
         schedule = weather.get_sunscreen_schedule(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
         logging.info('Wettervorhersage aktualisiert')
+
+        if radar_rain is None:
+            update_radar()
         
     except:
         logging.exception('Fehler beim Abruf der Wetterdaten')
+
+
+radar_rain = None
+@background.job(interval = datetime.timedelta(minutes = 5))
+def update_radar():
+    global radar_rain
+    global schedule
+    global config
+    
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        soon = now + datetime.timedelta(minutes = 10)
+        close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
+        close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
+        
+        if close_now or close_soon:
+            precipitation = weather.get_current_precipitation(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
+            radar_rain = (precipitation > 0)
+        else:
+            # The screen is not closed anyway. No need to query the radar.
+            radar_rain = None
+        
+    except:
+        logging.exception('Fehler beim Abruf der Radar-Daten')
 
 
 @background.job(interval = datetime.timedelta(minutes = 1))
@@ -99,12 +127,26 @@ def apply_schedule():
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        soon = now + datetime.timedelta(minutes = 10)
         close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
+        close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
+        reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
+
+        # To prevent unnecessary movement:
+        # If the sunscreen will be opened shortly, we don't close it.
+        if close_now and not close_soon and not is_closed:
+            close_now = False
+            reason = '⏲'
+
+        # The forecast might be incorrect or outdated.
+        # If the radar detects unexpected precipitation, we must open the suncreen.
+        if close_now and radar_rain:
+            close_now = False
+            reason = '🌦'
+
         if is_closed == close_now:
             # Nothing to do
             return
-
-        reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
 
         status = device.status()
         if status['dps']['1'] != 'stop':
