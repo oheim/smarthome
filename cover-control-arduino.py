@@ -88,6 +88,7 @@ def update_radar():
         
     except:
         logging.exception('Fehler beim Abruf der Radar-Daten')
+        radar_rain = None
 
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 def send_command(command):

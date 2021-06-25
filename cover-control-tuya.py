@@ -112,6 +112,7 @@ def update_radar():
         
     except:
         logging.exception('Fehler beim Abruf der Radar-Daten')
+        radar_rain = None
 
 
 @background.job(interval = datetime.timedelta(minutes = 1))
