@@ -104,10 +104,9 @@ def update_radar():
         close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
         
         if close_now or close_soon:
-            precipitation = weather.get_current_precipitation(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
-            radar_rain = (precipitation > 0)
+            radar_rain = weather.get_current_precipitation(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
         else:
-            # The screen is not closed anyway. No need to query the radar.
+            # The screen is not closed. No need to query the radar.
             radar_rain = None
         
     except:

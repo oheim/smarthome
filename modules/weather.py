@@ -154,9 +154,14 @@ def get_current_precipitation(latitude, longitude):
     
     data, attributes = wrl.io.read_radolan_composite(ry_latest.data)
 
+    # Remove values with missing data
     masked_data = np.ma.masked_equal(data, attributes['nodataflag'])
-
+    
+    # Remove values below the precision, the precision is 0.083 mm/h
+    masked_data = np.ma.masked_less_equal(masked_data, attributes['precision'])
+    
     # local_radolan_idx selects the data within a 10km radius
     local_data = masked_data[tuple(local_radolan_idx.T.tolist())]
     
-    return max(local_data)
+    # At least 5 measurements with weak rain in the local area?
+    return np.ma.count(local_data) >= 5
