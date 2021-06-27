@@ -37,6 +37,8 @@ import numpy as np
 import wradlib as wrl
 from osgeo import osr
 
+import datetime
+
 observer = None
 local_radolan_idx = None
 local_stations = None
@@ -131,9 +133,12 @@ def get_sunscreen_schedule(latitude, longitude):
     return schedule
 
 
+last_radolan_rain_date = None
+
 def get_current_precipitation(latitude, longitude):
     global local_radolan_idx
     global observer
+    global last_radolan_rain_date
     
     if observer is None or observer.latitude != latitude or observer.longitude != longitude:
         set_location(latitude, longitude)
@@ -154,14 +159,28 @@ def get_current_precipitation(latitude, longitude):
     
     data, attributes = wrl.io.read_radolan_composite(ry_latest.data)
 
+    # local_radolan_idx selects the data within a 10km radius
+    local_data = data[tuple(local_radolan_idx.T.tolist())]
+
     # Remove values with missing data
-    masked_data = np.ma.masked_equal(data, attributes['nodataflag'])
+    clean_local_data = np.ma.masked_equal(local_data, attributes['nodataflag'])
     
     # Remove values below the precision, the precision is 0.083 mm/h
-    masked_data = np.ma.masked_less_equal(masked_data, attributes['precision'])
+    clean_local_data = np.ma.masked_less_equal(clean_local_data, attributes['precision'])
+
+    if last_radolan_rain_date is None or attributes['datetime'] - last_radolan_rain_date > datetime.timedelta(minutes=10):
+        # initially and after a period of no rain:
+        # at least 5 measurements required to detect rain
+        threshold = 5
+    else:
+        # when it is raining: lower threshold to lower detection jitter
+        threshold = 2
     
-    # local_radolan_idx selects the data within a 10km radius
-    local_data = masked_data[tuple(local_radolan_idx.T.tolist())]
+    is_raining = np.ma.count(clean_local_data) >= threshold
     
-    # At least 5 measurements with weak rain in the local area?
-    return np.ma.count(local_data) >= 5
+    if is_raining:
+        last_radolan_rain_date = attributes['datetime']
+    else:
+        last_radolan_rain_date = None
+    
+    return is_raining
