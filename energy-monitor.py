@@ -107,12 +107,17 @@ def wait_for_state(hostname, target_state):
     
     return total_wh
 
-def wait_full_cycle(hostname, cost_per_kwh):
+def wait_full_cycle(hostname, cost_per_kwh, message):
     while True:
         total_wh_start = wait_for_state(hostname, True)
         time_start = time.time()
+        
+        started_message_id = telegram.bot_send(text=message)
+        
         total_wh_stop = wait_for_state(hostname, False)
         time_stop = time.time()
+    
+        telegram.bot_delete(message_id=started_message_id)
     
         cycle_duration = time_stop - time_start
         if cycle_duration < 10 * 60: # 10min
@@ -132,8 +137,8 @@ telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
 
 try:
     while True:
-        cycle_cost = wait_full_cycle(hostname, float(config['POWER_COST']))
-        message = config['MESSAGE_TEMPLATE'].format(cycle_cost)
+        cycle_cost = wait_full_cycle(hostname, float(config['POWER_COST']), config['STARTED_MESSAGE_TEMPLATE'])
+        message = config['DONE_MESSAGE_TEMPLATE'].format(cycle_cost)
         logging.info(message)
         telegram.bot_send(text=message)
 finally:

@@ -69,4 +69,15 @@ def bot_send(text, chat_id = None):
     if chat_id is None:
         chat_id = default_chat_id
         
-    updater.bot.send_message(chat_id, text)
+    message = updater.bot.send_message(chat_id, text)
+    
+    return message.message_id
+
+def bot_delete(message_id, chat_id = None):
+    global default_chat_id
+    
+    if chat_id is None:
+        chat_id = default_chat_id
+        
+    updater.bot.delete_message(chat_id, message_id)
+    
