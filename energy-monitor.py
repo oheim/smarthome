@@ -120,7 +120,7 @@ def wait_full_cycle(hostname, cost_per_kwh, message):
             # We don't want to falsely detect this as the start
             # of a new cycle.
             time.sleep(12.0)
-            still_active = detect_activity(hostname)
+            still_active, _ = detect_activity(hostname)
             if still_active:
                 break
         
