@@ -109,8 +109,20 @@ def wait_for_state(hostname, target_state):
 
 def wait_full_cycle(hostname, cost_per_kwh, message):
     while True:
-        total_wh_start = wait_for_state(hostname, True)
-        time_start = time.time()
+        while True:
+            total_wh_start = wait_for_state(hostname, True)
+            time_start = time.time()
+            
+            # The dryer might activate the motor for 10 seconds
+            # after finishing a cycle
+            # to prevent moisture while the laundry cools down.
+            #
+            # We don't want to falsely detect this as the start
+            # of a new cycle.
+            time.sleep(10.0)
+            still_active = detect_activity(hostname)
+            if still_active:
+                break
         
         started_message_id = telegram.bot_send(text=message)
         
