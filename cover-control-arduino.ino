@@ -15,53 +15,48 @@ limitations under the License.
 */
 
 /* 
-Moves the sunscreen in the desired position.
+Moves the sunscreen or window in the desired position.
 
-Listen on UDP port 8888 for commands 'open' and 'close'.
+Listen on UDP port 8888 for commands 'window open', 'window close', 'curtain open', and 'curtain close'.
 
-The user may override the curtain position via PINs 6 and 8 (e. g. install a
+The user may override the curtain position via PINs A2 and A3 (e. g. install a
 wall switch).
 
-The remote control for the curtain is connected to PINs 2 and 5.
+The remote control for the window is connected to PINs 2/3.
+The remote controls for the curtains is connected to PINs 5/6 and 8/9.
 */
 
 #include <Ethernet.h>
 #include <EthernetUdp.h>
-#include <string.h>
 
 const byte MAC[] = { 0x12, 0x06, 0x69, 0x7d, 0xf7, 0x10 };
 const unsigned int LISTEN_PORT = 8888;
 
-const int SIGNAL_LED = 7;
-const int OPTO_DOWN = 2;
-const int OPTO_UP = 5;
-const int MANUAL_DOWN = 6;
-const int MANUAL_UP = 8;
+const int OPTO_DOWN[] = {2, 5, 8};
+const int OPTO_UP[] = {3, 6, 9};
+const int MANUAL_DOWN = A3;
+const int MANUAL_UP = A2;
 
 enum OperationMode { automatic, manual_down, manual_up };
-enum CurtainPosition { unknown, up, down };
+enum Position { unknown, up, down };
 
-CurtainPosition automaticPosition = unknown;
-CurtainPosition currentPosition = unknown;
+Position automaticPosition[] = {unknown, unknown, unknown};
+Position currentPosition[] = {unknown, unknown, unknown};
+OperationMode curtainOpMode = automatic;
 
 char packetBuffer[UDP_TX_PACKET_MAX_SIZE];
 
 EthernetUDP udp;
 
 void setup() {
-  pinMode(SIGNAL_LED, OUTPUT);
-  pinMode(OPTO_UP, OUTPUT);
-  pinMode(OPTO_DOWN, OUTPUT);
-  pinMode(MANUAL_UP, INPUT);
-  pinMode(MANUAL_DOWN, INPUT);
-
-  digitalWrite(SIGNAL_LED, HIGH);
+  for (int idx = 0; idx < (sizeof(OPTO_DOWN) / sizeof(int)); idx++) {
+    pinMode(OPTO_DOWN[idx], OUTPUT);
+    pinMode(OPTO_UP[idx], OUTPUT);
+  }
 
   Ethernet.begin(MAC);
 
   udp.begin(LISTEN_PORT);
-
-  digitalWrite(SIGNAL_LED, LOW);
 }
 
 void loop() {
@@ -69,32 +64,52 @@ void loop() {
 
   updateAutomaticPosition();
 
-  moveCurtain(getTargetPosition());
+  curtainOpMode = getOpModeStable();
+
+  for (int idx = 0; idx < (sizeof(OPTO_DOWN) / sizeof(int)); idx++) {
+    setPosition(idx, getTargetPosition(idx));
+  }
 }
 
+// Receive commands as UDP packets and set the automaticPosition[] accordingly
 void updateAutomaticPosition() {
-  int packetSize = udp.parsePacket();
-  if (packetSize) {
+  while (true) {
+    int packetSize = udp.parsePacket();
+    if (packetSize == 0) {
+      return;
+    }
+    
     udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
-
-    if (strncmp(packetBuffer, "open", packetSize) == 0) {
-      automaticPosition = up;
+    if (packetSize < UDP_TX_PACKET_MAX_SIZE) {
+      packetBuffer[packetSize] = 0x00;
     }
 
-    if (strncmp(packetBuffer, "close", packetSize) == 0) {
-      automaticPosition = down;
+    if (strcmp(packetBuffer, "window open") == 0) {
+      automaticPosition[0] = up;
+    } else if (strcmp(packetBuffer, "window close") == 0) {
+      automaticPosition[0] = down;
+    } else if (strcmp(packetBuffer, "curtain open") == 0) {
+      automaticPosition[1] = up;
+      automaticPosition[2] = up;
+    } else if (strcmp(packetBuffer, "curtain close") == 0) {
+      automaticPosition[1] = down;
+      automaticPosition[2] = down;
+    } else {
+      // unsupported command
     }
   }
 }
 
-CurtainPosition getTargetPosition() {
-  OperationMode opMode = automatic;
-  if (digitalRead(MANUAL_UP) == HIGH) {
-    opMode = manual_up;
+// Determine the target position for a remote control,
+// based on the wall switch and the last received command.
+Position getTargetPosition(int idx) {
+  OperationMode opMode;
+  if (idx == 0) {
+    // The first remote control moves the window position,
+    // which can not be overridden by the wall switch.
+    opMode = automatic;
   } else {
-    if (digitalRead(MANUAL_DOWN) == HIGH) {
-      opMode = manual_down;
-    }
+    opMode = curtainOpMode;
   }
 
   switch (opMode) {
@@ -103,14 +118,45 @@ CurtainPosition getTargetPosition() {
     case manual_up:
       return up;
     case automatic:
-      return automaticPosition;
+      return automaticPosition[idx];
     default:
       return unknown;
   }
 }
 
-void moveCurtain(CurtainPosition target) {
-  if (target == currentPosition) {
+// Read input pins until two subsequent measurements are equal.
+OperationMode getOpModeStable() {
+  OperationMode opMode = getOpMode();
+  OperationMode previousOpMode;
+  do {
+    delay(200);
+    previousOpMode = opMode;
+    opMode = getOpMode();
+  } while (previousOpMode != opMode);
+  return opMode;
+}
+
+// Read input pins until none or only one pin is in HIGH state.
+OperationMode getOpMode() {
+  while (true) {
+    switch (((digitalRead(MANUAL_UP) == HIGH) << 1) | (digitalRead(MANUAL_DOWN) == HIGH)) {
+      case 0:
+        return automatic;
+      case 1:
+        return manual_down;
+      case 2:
+        return manual_up;
+      case 3:
+        // Illegal state: Both up and down buttons are pressed
+        ;
+    }
+    delay(200);
+  }
+}
+
+// Activate the remote control to move the window / curtain into a new position.
+void setPosition(int idx, Position target) {
+  if (target == currentPosition[idx]) {
     // nothing to do
     return;
   }
@@ -118,21 +164,23 @@ void moveCurtain(CurtainPosition target) {
   int opto;
   switch (target) {
     case up:
-      opto = OPTO_UP;
+      opto = OPTO_UP[idx];
       break;
     case down:
-      opto = OPTO_DOWN;
+      opto = OPTO_DOWN[idx];
       break;
     default:
+      // target == unknown
       return;
   }
 
   // Send signal to move curtain
-  digitalWrite(SIGNAL_LED, HIGH);
   digitalWrite(opto, HIGH);
   delay(200);
   digitalWrite(opto, LOW);
-  digitalWrite(SIGNAL_LED, LOW);
 
-  currentPosition = target;
+  // Wait until signal has been sent to avoid interference
+  // delay(500);
+
+  currentPosition[idx] = target;
 }

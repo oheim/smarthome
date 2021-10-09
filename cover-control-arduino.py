@@ -125,11 +125,11 @@ def apply_schedule():
         if close_now:
             if is_closed == False:
                 telegram.bot_send('Die Markise wird ausgefahren ' + reason)
-            send_command('close')
+            send_command('curtain close')
         else:
             if is_closed == True:
                 telegram.bot_send('Die Markise wird eingefahren ' + reason)
-            send_command('open')
+            send_command('curtain open')
         is_closed = close_now
         
     except:
