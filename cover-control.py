@@ -112,13 +112,11 @@ def apply_schedule():
             reason = '🌦'
 
         if close_now:
-            if is_closed == False:
-                logging.info('Die Markise wird ausgefahren %s', reason)
+            logging.info('Die Markise wird ausgefahren %s', reason)
             arduinoclient.close_curtain()
             tuyaclient.close_curtain()
         else:
-            if is_closed == True:
-                logging.info('Die Markise wird eingefahren %s', reason)
+            logging.info('Die Markise wird eingefahren %s', reason)
             arduinoclient.open_curtain()
             tuyaclient.open_curtain()
         is_closed = close_now
