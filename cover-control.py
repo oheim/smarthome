@@ -17,12 +17,8 @@
 
 """Control program for a window sunscreen
 
-This script sends the optimal sunscreen position over network (UDP) to a
-microcontroller (Arduino with ethernet shield).  The microcontroller supports
-manual override with a hardware switch and triggers a remote control to send
-radio commands to move the sunscreen.
-
-Find the arduino code in cover-control-arduino.ino.
+This script sends the optimal sunscreen position over network to a
+microcontroller.  The microcontroller moves the sunscreen.
 
 The optimal sunscreen position is based on a weather forecast, which we
 retrieve for a nearby weather station by DWD (Deutscher Wetterdienst).
@@ -30,19 +26,17 @@ retrieve for a nearby weather station by DWD (Deutscher Wetterdienst).
 @author: Oliver Heimlich <oheim@posteo.de>
 """
 
-import socket
 import datetime
 import time
 import timeloop
 import logging
-import sys
 import dotenv
 
-from modules import weather
+from modules import weather, arduinoclient
 
-hostname = sys.argv[1]
-config = dotenv.dotenv_values("Sunscreen-arduino.env")
+config = dotenv.dotenv_values("Sunscreen.env")
 weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
+arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['ARDUINO_PORT']))
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
@@ -90,13 +84,6 @@ def update_radar():
         logging.exception('Fehler beim Abruf der Radar-Daten')
         radar_rain = None
 
-udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-def send_command(command):
-    global hostname
-    global udp
-    
-    udp.sendto(bytes(command, 'utf-8'), (socket.gethostbyname(hostname), 8888))
-
 is_closed = None
 @background.job(interval = datetime.timedelta(minutes = 1))
 def apply_schedule():
@@ -126,11 +113,11 @@ def apply_schedule():
         if close_now:
             if is_closed == False:
                 logging.info('Die Markise wird ausgefahren %s', reason)
-            send_command('curtain close')
+            arduinoclient.close_curtain()
         else:
             if is_closed == True:
                 logging.info('Die Markise wird eingefahren %s', reason)
-            send_command('curtain open')
+            arduinoclient.open_curtain()
         is_closed = close_now
         
     except:
