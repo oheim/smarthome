@@ -38,7 +38,7 @@ import logging
 import sys
 import dotenv
 
-from modules import telegram, weather
+from modules import weather
 
 hostname = sys.argv[1]
 config = dotenv.dotenv_values("Sunscreen-arduino.env")
@@ -125,11 +125,11 @@ def apply_schedule():
 
         if close_now:
             if is_closed == False:
-                telegram.bot_send('Die Markise wird ausgefahren ' + reason)
+                logging.info('Die Markise wird ausgefahren %s', reason)
             send_command('curtain close')
         else:
             if is_closed == True:
-                telegram.bot_send('Die Markise wird eingefahren ' + reason)
+                logging.info('Die Markise wird eingefahren %s', reason)
             send_command('curtain open')
         is_closed = close_now
         
@@ -137,8 +137,6 @@ def apply_schedule():
         logging.exception('Fehler beim Anwenden des Plans')        
 
 update_schedule()
-
-telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
 
 apply_schedule()
 
@@ -149,4 +147,3 @@ try:
         time.sleep(1)
 finally:
     background.stop()
-    telegram.bot_stop()
