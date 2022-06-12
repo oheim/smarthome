@@ -40,12 +40,14 @@ from osgeo import osr
 import datetime
 
 observer = None
-local_radolan_idx = None
+proximity_radolan_idx = None
+vicinity_radolan_idx = None
 local_stations = None
 
 def set_location(latitude, longitude):
     global local_stations
-    global local_radolan_idx
+    global proximity_radolan_idx
+    global vicinity_radolan_idx
     global observer
     
     # Find 2 local forecast stations
@@ -60,7 +62,8 @@ def set_location(latitude, longitude):
     radolan_grid_xy = wrl.georef.get_radolan_grid(900, 900)
     coord_xy = wrl.georef.reproject([longitude, latitude], projection_source=proj_wgs, projection_target=proj_stereo)
     distance_xy = np.hypot(radolan_grid_xy[:, :, 0] - coord_xy[0], radolan_grid_xy[:, :, 1] - coord_xy[1])
-    local_radolan_idx = np.argwhere(distance_xy < 10)
+    proximity_radolan_idx = np.argwhere(distance_xy < 10)
+    vicinity_radolan_idx = np.argwhere(distance_xy < 50)
     
     # Define observer for sun position
     observer = astral.Observer(latitude=latitude, longitude=longitude)
@@ -136,7 +139,8 @@ def get_sunscreen_schedule(latitude, longitude):
 last_radolan_rain_date = None
 
 def get_current_precipitation(latitude, longitude):
-    global local_radolan_idx
+    global proximity_radolan_idx
+    global vicinity_radolan_idx
     global observer
     global last_radolan_rain_date
     
@@ -159,8 +163,18 @@ def get_current_precipitation(latitude, longitude):
     
     data, attributes = wrl.io.read_radolan_composite(ry_latest.data)
 
-    # local_radolan_idx selects the data within a 10km radius
-    local_data = data[tuple(local_radolan_idx.T.tolist())]
+    if last_radolan_rain_date is None or attributes['datetime'] - last_radolan_rain_date > datetime.timedelta(minutes=15):
+        # initially and after a period of no rain:
+        # at least 5 measurements within a radius of 10km required to detect rain
+        threshold = 5
+        local_data = data[tuple(proximity_radolan_idx.T.tolist())]
+
+    else:
+        # when it is raining:
+        # wait until only 2 measurements within a radius of 50km
+        # to lower detection jitter
+        threshold = 2
+        local_data = data[tuple(vicinity_radolan_idx.T.tolist())]
 
     # Remove values with missing data
     clean_local_data = np.ma.masked_equal(local_data, attributes['nodataflag'])
@@ -168,15 +182,7 @@ def get_current_precipitation(latitude, longitude):
     # Remove values below the precision, the precision is 0.083 mm/h
     clean_local_data = np.ma.masked_less_equal(clean_local_data, attributes['precision'])
 
-    if last_radolan_rain_date is None or attributes['datetime'] - last_radolan_rain_date > datetime.timedelta(minutes=10):
-        # initially and after a period of no rain:
-        # at least 5 measurements required to detect rain
-        threshold = 5
-    else:
-        # when it is raining: lower threshold to lower detection jitter
-        threshold = 2
-    
-    is_raining = np.ma.count(clean_local_data) >= threshold
+    is_raining = (np.ma.count(clean_local_data) >= threshold)
     
     if is_raining:
         last_radolan_rain_date = attributes['datetime']
