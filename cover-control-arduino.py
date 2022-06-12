@@ -42,6 +42,7 @@ from modules import telegram, weather
 
 hostname = sys.argv[1]
 config = dotenv.dotenv_values("Sunscreen-arduino.env")
+weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
@@ -56,7 +57,7 @@ def update_schedule():
     global radar_rain
     
     try:
-        schedule = weather.get_sunscreen_schedule(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
+        schedule = weather.get_sunscreen_schedule()
         logging.info('Wettervorhersage aktualisiert')
         
         if radar_rain is None:
@@ -80,7 +81,7 @@ def update_radar():
         close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
         
         if close_now or close_soon:
-            radar_rain = weather.get_current_precipitation(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
+            radar_rain = weather.get_current_precipitation()
         else:
             # The screen is not closed. No need to query the radar.
             radar_rain = None

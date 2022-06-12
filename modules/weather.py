@@ -69,12 +69,9 @@ def set_location(latitude, longitude):
     observer = astral.Observer(latitude=latitude, longitude=longitude)
 
 
-def get_sunscreen_schedule(latitude, longitude):
+def get_sunscreen_schedule():
     global local_stations
     global observer
-    
-    if observer is None or observer.latitude != latitude or observer.longitude != longitude:
-        set_location(latitude, longitude)
     
     forecast = pd.DataFrame()
     for station_forecast in local_stations.values.read_mosmix_large(DwdForecastDate.LATEST):
@@ -138,15 +135,12 @@ def get_sunscreen_schedule(latitude, longitude):
 
 last_radolan_rain_date = None
 
-def get_current_precipitation(latitude, longitude):
+def get_current_precipitation():
     global proximity_radolan_idx
     global vicinity_radolan_idx
     global observer
     global last_radolan_rain_date
     
-    if observer is None or observer.latitude != latitude or observer.longitude != longitude:
-        set_location(latitude, longitude)
-
     # RY
     # qualitätsgeprüfte Radardaten nach Abschattungskorrektur
     # und nach Anwendung der verfeinerten Z-R-Beziehungen
