@@ -94,16 +94,16 @@ def apply_schedule():
     
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-        soon = now + datetime.timedelta(minutes = 10)
         close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
-        close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
         reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
 
         # To prevent unnecessary movement:
-        # If the sunscreen will be opened shortly, we don't close it.
-        if close_now and not close_soon and not is_closed:
-            close_now = False
-            reason = '⏲'
+        # If the sunscreen will be opened in the next two time frames, we don't close it.
+        if close_now and not is_closed:
+            if not (schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[1] and
+                    schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[2]):
+                close_now = False
+                reason = '⏲'
 
         # The forecast might be incorrect or outdated.
         # If the radar detects unexpected precipitation, we must open the suncreen.
