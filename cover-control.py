@@ -32,11 +32,12 @@ import timeloop
 import logging
 import dotenv
 
-from modules import weather, arduinoclient
+from modules import weather, arduinoclient, tuyaclient
 
 config = dotenv.dotenv_values("Sunscreen.env")
 weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['ARDUINO_PORT']))
+tuyaclient.set_device(device_id=config['TUYA_DEVICE_ID'], hostname=config['TUYA_HOSTNAME'], local_key=config['TUYA_LOCAL_KEY'])
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
@@ -114,10 +115,12 @@ def apply_schedule():
             if is_closed == False:
                 logging.info('Die Markise wird ausgefahren %s', reason)
             arduinoclient.close_curtain()
+            tuyaclient.close_curtain()
         else:
             if is_closed == True:
                 logging.info('Die Markise wird eingefahren %s', reason)
             arduinoclient.open_curtain()
+            tuyaclient.open_curtain()
         is_closed = close_now
         
     except:
