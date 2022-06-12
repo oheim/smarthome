@@ -27,7 +27,7 @@ import tinytuya
 def set_device(device_id, hostname, local_key):
     global device
     
-    device = tinytuya.CoverDevice(config['DEVICE_ID'], hostname, config['LOCAL_KEY'])
+    device = tinytuya.CoverDevice(device_id, hostname, local_key)
     device.set_version(3.3)
     device.set_socketRetryLimit(5)
 
