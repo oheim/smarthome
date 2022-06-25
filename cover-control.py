@@ -32,15 +32,15 @@ import timeloop
 import logging
 import dotenv
 
-from modules import weather, arduinoclient, tuyaclient
+from modules import weather, arduinoclient, tuyaclient, telegram
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                     level=logging.INFO)
 
 config = dotenv.dotenv_values("Sunscreen.env")
 weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['ARDUINO_PORT']))
 tuyaclient.set_device(device_id=config['TUYA_DEVICE_ID'], hostname=config['TUYA_HOSTNAME'], local_key=config['TUYA_LOCAL_KEY'])
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                     level=logging.INFO)
 
 background = timeloop.Timeloop()
 
@@ -114,16 +114,65 @@ def apply_schedule():
         if not (is_closed == close_now):
             if close_now:
                 logging.info('Die Markise wird ausgefahren %s', reason)
+                if is_closed is not None:
+                    telegram.bot_send('Die Markise wird ausgefahren {}'.format(reason))
                 arduinoclient.close_curtain()
                 tuyaclient.close_curtain()
             else:
                 logging.info('Die Markise wird eingefahren %s', reason)
+                if is_closed is not None:
+                    telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
                 arduinoclient.open_curtain()
                 tuyaclient.open_curtain()
             is_closed = close_now
         
     except:
         logging.exception('Fehler beim Anwenden des Plans')        
+
+
+close_window_at = None
+@background.job(interval = datetime.timedelta(minutes = 1))
+def close_window():
+    global close_window_at
+    
+    if close_window_at is None:
+        return
+    
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+    if now.after(close_window_at):
+        telegram.bot_send(text='Fenster wird geschlossen')
+        arduinoclient.close_window()
+        close_window_at = None
+    
+
+def open_window(args):
+    global close_window_at
+    
+    if args.length != 1:
+        return
+    
+    if args[0] == 'auf':
+        telegram.bot_send(text='Fenster wird geöffnet')
+        arduinoclient.open_window()
+        
+    if args[0] == 'zu':
+        telegram.bot_send(text='Fenster wird geschlossen')
+        arduinoclient.close_window()
+        close_window_at = None
+    
+    if args[0].isnumeric():
+        minutes = float(args[0])
+        if minutes <= 1:
+            minutes = 60
+            
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        close_window_at = now + datetime.timedelta(minutes = minutes)
+        
+        telegram.bot_send(text='Fenster wird für {:g} Minuten geöffnet'.format(minutes))
+        arduinoclient.open_window()
+
+
+telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], custom_command='Fenster', command_callback=open_window)
 
 update_schedule()
 

@@ -27,10 +27,12 @@ import telegram.ext
 
 updater = None
 default_chat_id = None
+custom_command_callback = None
 
-def bot_start(token, chat_id):
+def bot_start(token, chat_id, custom_command = None, command_callback = None):
     global updater
     global default_chat_id
+    global custom_command_callback
 
     default_chat_id = chat_id
     
@@ -38,14 +40,22 @@ def bot_start(token, chat_id):
 
     updater.dispatcher.add_error_handler(on_error)
 
-    updater.dispatcher.add_handler(telegram.ext.CommandHandler('start', on_start_command))
+    if custom_command is not None:
+        updater.dispatcher.add_handler(telegram.ext.CommandHandler(custom_command, on_custom_command))
+        custom_command_callback = command_callback
     
     updater.start_polling()
 
 
-def on_start_command(update, context):
-    logging.info("New message in chat %d", update.effective_chat.id)
-    context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a bot, please talk to me!")
+def on_custom_command(update, context):
+    global custom_command_callback
+    
+    try:
+        if custom_command_callback is not None:
+            custom_command_callback(context.args)
+
+    except:
+        logging.exception('Fehler beim Bearbeiten des Kommandos')
 
 
 def on_error(update, context):

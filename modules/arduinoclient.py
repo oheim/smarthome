@@ -42,6 +42,14 @@ def open_curtain():
     send_command('curtain open')
 
 
+def close_window():
+    send_command('window open')
+    
+    
+def open_window():
+    send_command('window close')
+
+
 def send_command(command):
     global udp
     
