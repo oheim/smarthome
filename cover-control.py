@@ -148,7 +148,7 @@ def close_window():
 def open_window(args):
     global close_window_at
     
-    if args.length != 1:
+    if len(args.length) 1:
         return
     
     if args[0] == 'auf':
