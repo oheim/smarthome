@@ -140,7 +140,8 @@ def close_window():
     
     now = datetime.datetime.now(datetime.timezone.utc).astimezone()
     if now.after(close_window_at):
-        telegram.bot_send(text='Fenster wird geschlossen')
+        logging.info('Fenster werden automatisch geschlossen')
+        telegram.bot_send(text='Fenster werden geschlossen')
         arduinoclient.close_window()
         close_window_at = None
     
@@ -152,11 +153,13 @@ def open_window(args):
         return
     
     if args[0] == 'auf':
-        telegram.bot_send(text='Fenster wird geöffnet')
+        logging.info('Fenster werden geöffnet')
+        telegram.bot_send(text='Fenster werden geöffnet')
         arduinoclient.open_window()
         
     if args[0] == 'zu':
-        telegram.bot_send(text='Fenster wird geschlossen')
+        logging.info('Fenster werden geschlossen')
+        telegram.bot_send(text='Fenster werden geschlossen')
         arduinoclient.close_window()
         close_window_at = None
     
@@ -168,7 +171,8 @@ def open_window(args):
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         close_window_at = now + datetime.timedelta(minutes = minutes)
         
-        telegram.bot_send(text='Fenster wird für {:g} Minuten geöffnet'.format(minutes))
+        logging.info('Fenster werden geöffnet')
+        telegram.bot_send(text='Fenster werden für {:g} Minuten geöffnet'.format(minutes))
         arduinoclient.open_window()
 
 
