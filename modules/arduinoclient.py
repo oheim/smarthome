@@ -43,11 +43,11 @@ def open_curtain():
 
 
 def close_window():
-    send_command('window open')
+    send_command('window close')
     
     
 def open_window():
-    send_command('window close')
+    send_command('window open')
 
 
 def send_command(command):
