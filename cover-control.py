@@ -139,7 +139,7 @@ def close_window():
         return
     
     now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-    if now.after(close_window_at):
+    if now > close_window_at:
         logging.info('Fenster werden automatisch geschlossen')
         telegram.bot_send(text='Fenster werden geschlossen')
         arduinoclient.close_window()
