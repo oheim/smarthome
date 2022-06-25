@@ -91,6 +91,7 @@ def apply_schedule():
     global is_closed
     global schedule
     global radar_rain
+    global close_window_at
     
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
@@ -113,15 +114,22 @@ def apply_schedule():
 
         if not (is_closed == close_now):
             if close_now:
-                logging.info('Die Markise wird ausgefahren %s', reason)
+                logging.info('Markise wird ausgefahren %s', reason)
                 if is_closed is not None:
                     telegram.bot_send('Die Markise wird ausgefahren {}'.format(reason))
                 arduinoclient.close_curtain()
                 tuyaclient.close_curtain()
             else:
-                logging.info('Die Markise wird eingefahren %s', reason)
+                logging.info('Markise wird eingefahren %s', reason)
+                if close_window_at is not None:
+                    telegram.bot_send(text='Fenster werden geschlossen')
                 if is_closed is not None:
-                    telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
+                    if close_window_at is None:
+                        telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
+                    else:
+                        telegram.bot_send('Die Markise wird eingefahren und die Fenster werden geschlossen {}'.format(reason))
+                arduinoclient.close_window()
+                close_window_at = None
                 arduinoclient.open_curtain()
                 tuyaclient.open_curtain()
             is_closed = close_now
@@ -141,7 +149,7 @@ def close_window():
     now = datetime.datetime.now(datetime.timezone.utc).astimezone()
     if now > close_window_at:
         logging.info('Fenster werden automatisch geschlossen')
-        telegram.bot_send(text='Fenster werden geschlossen')
+        telegram.bot_send(text='Die Fenster werden geschlossen')
         arduinoclient.close_window()
         close_window_at = None
     
@@ -154,12 +162,13 @@ def open_window(args):
     
     if args[0] == 'auf':
         logging.info('Fenster werden geöffnet')
-        telegram.bot_send(text='Fenster werden geöffnet')
+        telegram.bot_send(text='Die Fenster werden geöffnet')
+        close_window_at = weather.get_next_sunset()
         arduinoclient.open_window()
         
     if args[0] == 'zu':
         logging.info('Fenster werden geschlossen')
-        telegram.bot_send(text='Fenster werden geschlossen')
+        telegram.bot_send(text='Die Fenster werden geschlossen')
         arduinoclient.close_window()
         close_window_at = None
     
@@ -172,7 +181,7 @@ def open_window(args):
         close_window_at = now + datetime.timedelta(minutes = minutes)
         
         logging.info('Fenster werden geöffnet')
-        telegram.bot_send(text='Fenster werden für {:g} Minuten geöffnet'.format(minutes))
+        telegram.bot_send(text='Die Fenster werden für {:g} Minuten geöffnet'.format(minutes))
         arduinoclient.open_window()
 
 

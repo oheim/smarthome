@@ -184,3 +184,16 @@ def get_current_precipitation():
         last_radolan_rain_date = None
     
     return is_raining
+
+
+def get_next_sunset():
+    global observer
+    
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+    sunset = astral.sun.sunset(observer, now.date())
+    
+    if sunset < now:
+        tomorrow = now.date() + datetime.timedelta(days=1)
+        sunset = astral.sun.sunset(observer, tomorrow)
+    
+    return sunset
