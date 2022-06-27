@@ -122,7 +122,7 @@ def apply_schedule():
             else:
                 logging.info('Markise wird eingefahren %s', reason)
                 if close_window_at is not None:
-                    telegram.bot_send(text='Fenster werden geschlossen')
+                    logging.info('Fenster werden geschlossen')
                 if is_closed is not None:
                     if close_window_at is None:
                         telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
