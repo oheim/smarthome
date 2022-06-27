@@ -173,8 +173,8 @@ def get_current_precipitation():
     # Remove values with missing data
     clean_local_data = np.ma.masked_equal(local_data, attributes['nodataflag'])
     
-    # Remove values below the precision, the precision is 0.083 mm/h
-    clean_local_data = np.ma.masked_less_equal(clean_local_data, attributes['precision'])
+    # Remove values below the desired precision
+    clean_local_data = np.ma.masked_less_equal(clean_local_data, threshold * attributes['precision'])
 
     is_raining = (np.ma.count(clean_local_data) >= threshold)
     
