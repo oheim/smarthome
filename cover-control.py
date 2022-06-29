@@ -198,3 +198,4 @@ try:
         time.sleep(1)
 finally:
     background.stop()
+    telegram.bot_stop()
