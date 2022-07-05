@@ -24,12 +24,27 @@ from the optimal position, we send a command to move the sunscreen.
 
 import tinytuya
 
-def set_device(device_id, hostname, local_key):
+def set_cover_device(device_id, hostname, local_key):
     global device
     
     device = tinytuya.CoverDevice(device_id, hostname, local_key)
     device.set_version(3.3)
     device.set_socketRetryLimit(5)
+
+
+def set_plug_device(device_id, hostname, local_key):
+    global device
+    
+    device = tinytuya.Device(device_id, hostname, local_key)
+    device.set_version(3.3)
+    device.set_socketRetryLimit(5)
+
+
+def power_plug(seconds):
+    global device
+    
+    device.turn_on()
+    device.set_value(9, seconds)
 
 
 def close_curtain():

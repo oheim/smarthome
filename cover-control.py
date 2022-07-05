@@ -40,7 +40,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 config = dotenv.dotenv_values("Sunscreen.env")
 weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['ARDUINO_PORT']))
-tuyaclient.set_device(device_id=config['TUYA_DEVICE_ID'], hostname=config['TUYA_HOSTNAME'], local_key=config['TUYA_LOCAL_KEY'])
+tuyaclient.set_cover_device(device_id=config['TUYA_DEVICE_ID'], hostname=config['TUYA_HOSTNAME'], local_key=config['TUYA_LOCAL_KEY'])
 
 background = timeloop.Timeloop()
 
