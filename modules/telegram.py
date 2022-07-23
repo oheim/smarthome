@@ -59,6 +59,8 @@ def on_custom_command(update, context):
 
 
 def on_error(update, context):
+    global updater
+    
     logging.exception('Error in telegram bot', exc_info = context.error)
     
     # If the bot is idle for several hours it might happen that it looses
@@ -70,6 +72,7 @@ def on_error(update, context):
     
 
 def bot_stop():
+    global updater
     updater.stop()
 
 
