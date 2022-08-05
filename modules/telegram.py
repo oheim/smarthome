@@ -27,11 +27,13 @@ import telegram.ext
 
 updater = None
 default_chat_id = None
+custom_command = None
 custom_command_callback = None
 
-def bot_start(token, chat_id, custom_command = None, command_callback = None):
+def bot_start(token, chat_id, command = None, command_callback = None):
     global updater
     global default_chat_id
+    global custom_command
     global custom_command_callback
 
     default_chat_id = chat_id
@@ -40,9 +42,11 @@ def bot_start(token, chat_id, custom_command = None, command_callback = None):
 
     updater.dispatcher.add_error_handler(on_error)
 
-    if custom_command is not None:
-        updater.dispatcher.add_handler(telegram.ext.CommandHandler(custom_command, on_custom_command))
-        custom_command_callback = command_callback
+    if command is not None:
+        updater.dispatcher.add_handler(telegram.ext.CommandHandler(command, on_custom_command))
+        
+    custom_command = command
+    custom_command_callback = command_callback
     
     updater.start_polling()
 
@@ -60,6 +64,7 @@ def on_custom_command(update, context):
 
 def on_error(update, context):
     global updater
+    global custom_command
     
     logging.exception('Error in telegram bot', exc_info = context.error)
     
@@ -69,6 +74,12 @@ def on_error(update, context):
         updater.stop()
         time.sleep(2)
         updater.start_polling()
+        
+        # Reattach handlers
+        updater.dispatcher.add_error_handler(on_error)
+        if custom_command is not None:
+            updater.dispatcher.add_handler(telegram.ext.CommandHandler(custom_command, on_custom_command))
+        
     
 
 def bot_stop():
