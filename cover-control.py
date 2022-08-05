@@ -185,7 +185,7 @@ def open_window(args):
         arduinoclient.open_window()
 
 
-telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], custom_command='Fenster', command_callback=open_window)
+telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], command='Fenster', command_callback=open_window)
 
 update_schedule()
 
