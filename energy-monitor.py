@@ -31,6 +31,7 @@ import time
 import logging
 import locale
 import dotenv
+import asyncio
 
 from modules import telegram
 
@@ -91,6 +92,8 @@ def read_emeter_bulk(hostname, n):
 
 def detect_activity(hostname):
     power_mw_bulk, total_wh_bulk = read_emeter_bulk(hostname, 5)
+
+    power_mw_bulk
     
     if max(power_mw_bulk) > 5000: # 5W
         activity = True
@@ -99,18 +102,20 @@ def detect_activity(hostname):
         
     return activity, total_wh_bulk[1]
 
-def wait_for_state(hostname, target_state):
+async def wait_for_state(hostname, target_state):
     while True:
         current_state, total_wh = detect_activity(hostname)
         if current_state == target_state:
             break
-    
+        await asyncio.sleep(1)
+
     return total_wh
 
-def wait_full_cycle(hostname, cost_per_kwh, message):
+async def wait_full_cycle(hostname, cost_per_kwh, message):
     while True:
         while True:
-            total_wh_start = wait_for_state(hostname, True)
+            total_wh_start = await wait_for_state(hostname, True)
+            logging.info("cycle started")
             time_start = time.time()
             
             # The dryer might activate the motor for 10 seconds
@@ -119,17 +124,18 @@ def wait_full_cycle(hostname, cost_per_kwh, message):
             #
             # We don't want to falsely detect this as the start
             # of a new cycle.
-            time.sleep(12.0)
+            await asyncio.sleep(12.0)
             still_active, _ = detect_activity(hostname)
             if still_active:
                 break
         
-        started_message_id = telegram.bot_send(text=message)
+        started_message_id = await telegram.bot_send(text=message)
         
-        total_wh_stop = wait_for_state(hostname, False)
+        total_wh_stop = await wait_for_state(hostname, False)
+        logging.info("cycle ended")
         time_stop = time.time()
     
-        telegram.bot_delete(message_id=started_message_id)
+        await telegram.bot_delete(message_id=started_message_id)
     
         cycle_duration = time_stop - time_start
         if cycle_duration < 10 * 60: # 10min
@@ -145,13 +151,20 @@ devicename = read_info(hostname)
 
 config = dotenv.dotenv_values(devicename + ".env")
 
-telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
 
-try:
-    while True:
-        cycle_cost = wait_full_cycle(hostname, float(config['POWER_COST']), config['STARTED_MESSAGE_TEMPLATE'])
-        message = config['DONE_MESSAGE_TEMPLATE'].format(cycle_cost)
-        logging.info(message)
-        telegram.bot_send(text=message)
-finally:
-    telegram.bot_stop()
+async def main():
+    global config
+
+
+    try:
+        await telegram.bot_start(token=config['BOT_TOKEN'], chat_id=int(config['CHAT_ID']))
+
+        while True:
+            cycle_cost = await wait_full_cycle(hostname, float(config['POWER_COST']), config['STARTED_MESSAGE_TEMPLATE'])
+            message = config['DONE_MESSAGE_TEMPLATE'].format(cycle_cost)
+            logging.info(message)
+            await telegram.bot_send(text=message)
+    finally:
+        await telegram.bot_stop()
+
+asyncio.run(main())

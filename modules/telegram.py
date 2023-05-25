@@ -20,50 +20,52 @@
 @author: Oliver Heimlich <oheim@posteo.de>
 """
 
-
+import asyncio
 import logging
 import time
 import telegram.ext
 
-updater = None
+application = None
 default_chat_id = None
 custom_command = None
 custom_command_callback = None
 
-def bot_start(token, chat_id, command = None, command_callback = None):
-    global updater
+async def bot_start(token, chat_id, command = None, command_callback = None):
+    global application
     global default_chat_id
     global custom_command
     global custom_command_callback
 
     default_chat_id = chat_id
     
-    updater = telegram.ext.Updater(token)
+    application = telegram.ext.Application.builder().token(token).read_timeout(20).get_updates_read_timeout(30).build()
 
-    updater.dispatcher.add_error_handler(on_error)
+    application.add_error_handler(on_error)
 
     if command is not None:
-        updater.dispatcher.add_handler(telegram.ext.CommandHandler(command, on_custom_command))
+        application.add_handler(telegram.ext.CommandHandler(command, on_custom_command))
         
     custom_command = command
     custom_command_callback = command_callback
     
-    updater.start_polling()
+    await application.initialize()
+    await application.updater.start_polling()
+    await application.start()
 
 
-def on_custom_command(update, context):
+async def on_custom_command(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     global custom_command_callback
     
     try:
         if custom_command_callback is not None:
-            custom_command_callback(context.args)
+            await custom_command_callback(context.args)
 
     except:
         logging.exception('Fehler beim Bearbeiten des Kommandos')
 
 
-def on_error(update, context):
-    global updater
+async def on_error(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    global application
     global custom_command
     
     logging.exception('Error in telegram bot', exc_info = context.error)
@@ -71,37 +73,35 @@ def on_error(update, context):
     # If the bot is idle for several hours it might happen that it looses
     # connection after a NetworkError.  We can fix that with a simple reconnect
     if isinstance(context.error, telegram.error.NetworkError):
-        updater.stop()
-        time.sleep(2)
-        updater.start_polling()
-        
-        # Reattach handlers
-        updater.dispatcher.add_error_handler(on_error)
-        if custom_command is not None:
-            updater.dispatcher.add_handler(telegram.ext.CommandHandler(custom_command, on_custom_command))
-        
-    
+        await application.updater.stop()
+        await asyncio.sleep(2)
+        await application.updater.start()
 
-def bot_stop():
-    global updater
-    updater.stop()
+async def bot_stop():
+    global application
+
+    await application.updater.stop()
+    await application.stop()
+    await application.shutdown()
 
 
-def bot_send(text, chat_id = None):
+async def bot_send(text, chat_id = None):
+    global application
     global default_chat_id
     
     if chat_id is None:
         chat_id = default_chat_id
         
-    message = updater.bot.send_message(chat_id, text)
+    message = await application.bot.send_message(chat_id, text)
     
     return message.message_id
 
-def bot_delete(message_id, chat_id = None):
+async def bot_delete(message_id, chat_id = None):
+    global application
     global default_chat_id
     
     if chat_id is None:
         chat_id = default_chat_id
         
-    updater.bot.delete_message(chat_id, message_id)
+    await application.bot.delete_message(chat_id, message_id)
     
