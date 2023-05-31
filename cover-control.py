@@ -33,7 +33,7 @@ import logging
 import dotenv
 import asyncio
 
-from modules import weather, arduinoclient, tuyaclient, telegram
+from modules import weather, arduinoclient, tuyaclient, telegram, mqttclient
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
@@ -91,6 +91,13 @@ def bg_apply_schedule():
     global loop
     asyncio.run_coroutine_threadsafe(apply_schedule(), loop)
 
+def sun_is_shining():
+    global config
+    return mqttclient.is_power_above(int(config['PV_PEAK_POWER']) / 4)
+
+def sun_is_not_shining():
+    global config
+    return mqttclient.is_power_below(int(config['PV_PEAK_POWER']) / 8)
 
 is_closed = None
 async def apply_schedule():
@@ -117,6 +124,14 @@ async def apply_schedule():
         if close_now and radar_rain:
             close_now = False
             reason = '🌦'
+
+        # The sunscreen should be open during low irradiation.
+        if close_now and not is_closed and not sun_is_shining():
+            close_now = False
+            reason = '🌅'
+        if close_now and is_closed and sun_is_not_shining():
+            close_now = False
+            reason = '🌄'
 
         if not (is_closed == close_now):
             if close_now:
@@ -201,6 +216,8 @@ async def main():
 
     loop = asyncio.get_running_loop()
 
+    mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], topic=config['MQTT_TOPIC'])
+
     await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], command='Fenster', command_callback=open_window)
 
     update_schedule()
@@ -214,6 +231,7 @@ async def main():
             await asyncio.sleep(60)
     finally:
         background.stop()
+        mqttclient.disconnect()
         await telegram.bot_stop()
 
 asyncio.run(main())
