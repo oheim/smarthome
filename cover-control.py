@@ -108,14 +108,15 @@ async def apply_schedule():
     
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-        close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
-        reason = schedule[schedule.index.to_pydatetime() > now]['REASON'].iloc[0]
+        current_schedule = schedule[schedule.index.to_pydatetime() > now]
+        close_now = current_schedule['CLOSE'].iloc[0]
+        reason = current_schedule['REASON'].iloc[0]
 
         # To prevent unnecessary movement:
         # If the sunscreen will be opened in the next two time frames, we don't close it.
         if close_now and not is_closed:
-            if not (schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[1] and
-                    schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[2]):
+            if not (current_schedule['CLOSE'].iloc[1] and
+                    current_schedule['CLOSE'].iloc[2]):
                 close_now = False
                 reason = '⏲'
 
@@ -125,7 +126,10 @@ async def apply_schedule():
             close_now = False
             reason = '🌦'
 
+        close_window_now = not close_now and close_window_at is not None
+
         # The sunscreen should be open during low irradiation.
+        # An open window may stay open.
         if close_now and not is_closed and not sun_is_shining():
             close_now = False
             reason = '🌅'
@@ -142,19 +146,19 @@ async def apply_schedule():
                     await telegram.bot_send('Die Markise wird ausgefahren {}'.format(reason))
             else:
                 logging.info('Markise wird eingefahren %s', reason)
-                if close_window_at is not None:
+                if close_window_now:
                     logging.info('Fenster werden geschlossen')
-                arduinoclient.close_window()
+                    arduinoclient.close_window()
+                    close_window_at = None
                 arduinoclient.open_curtain()
                 tuyaclient.open_curtain()
                 if is_closed is not None:
-                    if close_window_at is None:
-                        await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
-                    else:
+                    if close_window_now:
                         await telegram.bot_send('Die Markise wird eingefahren und die Fenster werden geschlossen {}'.format(reason))
-                close_window_at = None
+                    else:
+                        await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
             is_closed = close_now
-        
+
     except:
         logging.exception('Fehler beim Anwenden des Plans')
 
