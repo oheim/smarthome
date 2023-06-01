@@ -32,9 +32,9 @@ def connect(server, user, password, topic):
 	global client
 
 	client = paho.Client(client_id="smarthome", userdata=None, protocol=paho.MQTTv5)
-	client.tls_set(tls_version=mqtt.client.ssl.PROTOCOL_TLS)
+#	client.tls_set(tls_version=mqtt.client.ssl.PROTOCOL_TLS)
 	client.username_pw_set(user, password)
-	client.connect(server, 8883)
+	client.connect(server, 1883)
 	client.on_message = on_message
 
 	client.subscribe(topic, qos=1)
