@@ -73,8 +73,8 @@ def update_radar():
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         soon = now + datetime.timedelta(minutes = 10)
-        close_now = schedule[schedule.index.to_pydatetime() > now]['CLOSE'].iloc[0]
-        close_soon = schedule[schedule.index.to_pydatetime() > soon]['CLOSE'].iloc[0]
+        close_now = schedule[schedule.index.to_pydatetime() > now]['WEATHER_PREDICTION'].iloc[0] != 'bad'
+        close_soon = schedule[schedule.index.to_pydatetime() > soon]['WEATHER_PREDICTION'].iloc[0] != 'bad'
         
         if close_now or close_soon:
             radar_rain = weather.get_current_precipitation()
@@ -109,16 +109,19 @@ async def apply_schedule():
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         current_schedule = schedule[schedule.index.to_pydatetime() > now]
-        close_now = current_schedule['CLOSE'].iloc[0]
         reason = current_schedule['REASON'].iloc[0]
 
-        # To prevent unnecessary movement:
-        # If the sunscreen will be opened in the next two time frames, we don't close it.
-        if close_now and not is_closed:
-            if not (current_schedule['CLOSE'].iloc[1] and
-                    current_schedule['CLOSE'].iloc[2]):
-                close_now = False
-                reason = '⏲'
+        if is_closed:
+            close_now = current_schedule['WEATHER_PREDICTION'].iloc[0] != 'bad'
+        else:
+            close_now = current_schedule['WEATHER_PREDICTION'].iloc[0] == 'good' and current_schedule['WEATHER_PREDICTION'].iloc[1] == 'good'
+
+            # To prevent unnecessary movement:
+            # If the sunscreen will be opened in the next two time frames, we don't close it.
+            if close_now:
+                if current_schedule['WEATHER_PREDICTION'].iloc[2] == 'bad':
+                    close_now = False
+                    reason = '⏲'
 
         # The forecast might be incorrect or outdated.
         # If the radar detects unexpected precipitation, we must open the suncreen.

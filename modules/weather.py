@@ -95,42 +95,53 @@ def get_sunscreen_schedule():
             DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value: 'max',
             DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value: 'min'
             })
-    
-    # Default = leave open
-    schedule = pd.DataFrame({'CLOSE': False, 'REASON': '⛅️'}, index = forecast.index, columns=['CLOSE', 'REASON'])
-    
-    # Close, if more than 5 Minutes sunshine per hour
-    sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] > 5 * 60
-    schedule[sunny_idx] = [True, '☀️']
-    
+
+    # Default
+    schedule = pd.DataFrame({'WEATHER_PREDICTION': 'ok', 'REASON': ''}, index = forecast.index, columns=['WEATHER_PREDICTION', 'REASON'])
+
+    not_sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] < 5 * 60
+    schedule[not_sunny_idx] = ['bad', '⛅']
+    good_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] >= 15 * 60
+
     cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
-    schedule[cloudy_idx] = [False, '☁️']
-    
+    schedule[cloudy_idx] = ['bad', '☁️']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] < 6/8 * 100.0
+
     dewy_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] > 40.0)
-    schedule[dewy_idx] = [False, '🌫']
-    
-    cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value] < 277.15
-    schedule[cold_idx] = [False, '❄️']
-    
-    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 10
-    schedule[windy_idx] = [False, '💨']
-    
+    schedule[dewy_idx] = ['bad', '🌫']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + 2 * forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] < forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - 2 * forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]
+    good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] < 30.0
+
+    cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value] < 277.15 # 4 °C
+    schedule[cold_idx] = ['bad', '❄️']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] >= 285.15 # 12 °C
+
+    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 10 # Windstärke 6 oder mehr
+    schedule[windy_idx] = ['bad', '💨']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] < 8 # Windstärke 4 oder weniger
+
     rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 40.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 120)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 40.0)
-    schedule[rainy_idx] = [False, '🌧']
-    
+    schedule[rainy_idx] = ['bad', '🌧']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] < 30.0
+    good_idx &= forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] < 60
+    good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] < 30.0
+
     thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 40.0
-    schedule[thundery_idx] = [False, '⛈']
-    
+    schedule[thundery_idx] = ['bad', '⛈']
+    good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] < 30.0
+
+    schedule[good_idx] = ['good', '☀️']
+
     # Don't close before sunrise
     sunrise = astral.sun.sunrise(observer)
-    schedule.loc[sunrise] = [False, '🌙']
-    
+    schedule.loc[sunrise] = ['bad', '🌙']
+
     # Open at sunset
     sunset = astral.sun.sunset(observer)
     index_after_sunset = schedule.index.where(schedule.index.to_pydatetime() > sunset).min()
     schedule.loc[sunset] = schedule.loc[index_after_sunset]
-    schedule.loc[index_after_sunset] = [False, '🌙']
-    
+    schedule.loc[index_after_sunset] = ['bad', '🌙']
+
     schedule = schedule.sort_index()
 
     return schedule
