@@ -101,15 +101,15 @@ def get_sunscreen_schedule():
 
     not_sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] < 5 * 60
     schedule[not_sunny_idx] = ['bad', '⛅']
-    good_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] >= 15 * 60
+    good_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] >= 10 * 60
 
     cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
     schedule[cloudy_idx] = ['bad', '☁️']
     good_idx &= forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] < 6/8 * 100.0
 
-    dewy_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] > 40.0)
+    dewy_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value]) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] > 45.0)
     schedule[dewy_idx] = ['bad', '🌫']
-    good_idx &= forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + 2 * forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] < forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - 2 * forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]
+    good_idx &= forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] < forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]
     good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] < 30.0
 
     cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value] < 277.15 # 4 °C
@@ -120,13 +120,13 @@ def get_sunscreen_schedule():
     schedule[windy_idx] = ['bad', '💨']
     good_idx &= forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] < 8 # Windstärke 4 oder weniger
 
-    rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 40.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 120)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 40.0)
+    rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 45.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 120)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 45.0)
     schedule[rainy_idx] = ['bad', '🌧']
     good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] < 30.0
     good_idx &= forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] < 60
     good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] < 30.0
 
-    thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 40.0
+    thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 45.0
     schedule[thundery_idx] = ['bad', '⛈']
     good_idx &= forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] < 30.0
 
