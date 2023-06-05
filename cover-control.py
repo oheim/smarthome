@@ -100,14 +100,17 @@ def sun_is_not_shining():
     return mqttclient.is_power_below(int(config['PV_PEAK_POWER']) / 8)
 
 is_closed = None
+close_window_at = None
 async def apply_schedule():
     global is_closed
     global schedule
     global radar_rain
     global close_window_at
-    
+
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        # The schedule contains predictions for certain timestamps about the wheather within the 'last 1 hour'.
+        # Thus the prediction for now is the first schedule entry the the timestamp is greater than 'now'.
         current_schedule = schedule[schedule.index.to_pydatetime() > now]
         reason = current_schedule['REASON'].iloc[0]
 
@@ -129,7 +132,16 @@ async def apply_schedule():
             close_now = False
             reason = '🌦'
 
-        close_window_now = not close_now and close_window_at is not None
+        close_window_reason = reason
+        if close_window_at is None:
+            # Window is already closed
+            close_window_now = False
+        else:
+            close_window_now = (
+                now > close_window_at or
+                current_schedule['WEATHER_PREDICTION'].iloc[0] == 'bad' or
+                radar_rain
+            )
 
         # The sunscreen should be open during low irradiation.
         # An open window may stay open.
@@ -139,6 +151,8 @@ async def apply_schedule():
         if close_now and is_closed and sun_is_not_shining():
             close_now = False
             reason = '🌄'
+
+        logging.info('Status: {}'.format(reason))
 
         if not (is_closed == close_now):
             if close_now:
@@ -161,57 +175,43 @@ async def apply_schedule():
                     else:
                         await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
             is_closed = close_now
+        else:
+            if close_window_now:
+                logging.info('Fenster werden automatisch geschlossen {}'.format(close_window_reason))
+                arduinoclient.close_window()
+                close_window_at = None
+                await telegram.bot_send(text='Die Fenster werden geschlossen {}'.format(close_window_reason))
 
     except:
         logging.exception('Fehler beim Anwenden des Plans')
 
-@background.job(interval = datetime.timedelta(minutes = 1))
-def bg_close_window():
-    global loop
-    asyncio.run_coroutine_threadsafe(close_window(), loop)
-
-
-close_window_at = None
-async def close_window():
-    global close_window_at
-    
-    if close_window_at is None:
-        return
-    
-    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-    if now > close_window_at:
-        logging.info('Fenster werden automatisch geschlossen')
-        arduinoclient.close_window()
-        close_window_at = None
-        await telegram.bot_send(text='Die Fenster werden geschlossen')
-    
 
 async def open_window(args):
     global close_window_at
-    
+
     if len(args) != 1:
         return
-    
+
     if args[0] == 'auf':
         logging.info('Fenster werden geöffnet')
-        await telegram.bot_send(text='Die Fenster werden geöffnet')
         close_window_at = weather.get_next_sunset()
         arduinoclient.open_window()
-        
+        await telegram.bot_send(text='Die Fenster werden geöffnet')
+
     if args[0] == 'zu':
         logging.info('Fenster werden geschlossen')
-        await telegram.bot_send(text='Die Fenster werden geschlossen')
         arduinoclient.close_window()
         close_window_at = None
-    
+        await telegram.bot_send(text='Die Fenster werden geschlossen')
+
     if args[0].isnumeric():
         minutes = float(args[0])
         if minutes < 1:
             minutes = 60
-            
+
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         close_window_at = now + datetime.timedelta(minutes = minutes)
-        
+
         logging.info('Fenster werden geöffnet')
         arduinoclient.open_window()
         await telegram.bot_send(text='Die Fenster werden für {:g} Minuten geöffnet'.format(minutes))

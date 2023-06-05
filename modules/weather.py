@@ -116,9 +116,9 @@ def get_sunscreen_schedule():
     schedule[cold_idx] = ['bad', '❄️']
     good_idx &= forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] >= 285.15 # 12 °C
 
-    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 10 # Windstärke 6 oder mehr
+    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 11
     schedule[windy_idx] = ['bad', '💨']
-    good_idx &= forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] < 8 # Windstärke 4 oder weniger
+    good_idx &= forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] < 10
 
     rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 45.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 120)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 45.0)
     schedule[rainy_idx] = ['bad', '🌧']
