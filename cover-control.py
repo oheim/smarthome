@@ -181,19 +181,16 @@ async def apply_schedule():
         logging.exception('Fehler beim Anwenden des Plans')
 
 
-async def open_window(args):
+async def on_window_command(command, args):
     global window_is_closed
 
-    if len(args) != 1:
-        return
-
-    if args[0] == 'auf':
+    if command == 'fenster_auf':
         logging.info('Fenster werden geöffnet')
         arduinoclient.open_window()
         window_is_closed = False
         await telegram.bot_send(text='Die Fenster werden geöffnet')
 
-    if args[0] == 'zu':
+    if command == 'fenster_zu':
         logging.info('Fenster werden geschlossen')
         arduinoclient.close_window()
         window_is_closed = True
@@ -208,7 +205,7 @@ async def main():
 
     mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], topic=config['MQTT_TOPIC'])
 
-    await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], command='Fenster', command_callback=open_window)
+    await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], commands=['fenster_auf', 'fenster_zu'], command_callback=on_window_command)
 
     update_schedule()
 
