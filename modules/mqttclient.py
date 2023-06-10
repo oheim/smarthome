@@ -8,13 +8,13 @@ from paho import mqtt
 power_history = []
 
 def is_power_above(threshold):
-	if len(power_history) < 10:
+	if len(power_history) == 0:
 		return False
 	else:
 		return min(power_history) > threshold
 
 def is_power_below(threshold):
-	if len(power_history) < 10:
+	if len(power_history) == 0:
 		return False
 	else:
 		return max(power_history) < threshold

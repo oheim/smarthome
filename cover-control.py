@@ -100,12 +100,12 @@ def sun_is_not_shining():
     return mqttclient.is_power_below(int(config['PV_PEAK_POWER']) / 8)
 
 is_closed = None
-close_window_at = None
+window_is_closed = None
 async def apply_schedule():
     global is_closed
+    global window_is_closed
     global schedule
     global radar_rain
-    global close_window_at
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
@@ -121,27 +121,20 @@ async def apply_schedule():
 
             # To prevent unnecessary movement:
             # If the sunscreen will be opened in the next two time frames, we don't close it.
-            if close_now:
-                if current_schedule['WEATHER_PREDICTION'].iloc[2] == 'bad':
-                    close_now = False
-                    reason = '⏲'
+            if close_now and current_schedule['WEATHER_PREDICTION'].iloc[2] == 'bad':
+                close_now = False
 
         # The forecast might be incorrect or outdated.
         # If the radar detects unexpected precipitation, we must open the suncreen.
-        if close_now and radar_rain:
+        if radar_rain:
             close_now = False
             reason = '🌦'
 
         close_window_reason = reason
-        if close_window_at is None:
-            # Window is already closed
+        if window_is_closed:
             close_window_now = False
         else:
-            close_window_now = (
-                now > close_window_at or
-                current_schedule['WEATHER_PREDICTION'].iloc[0] == 'bad' or
-                radar_rain
-            )
+            close_window_now = radar_rain or current_schedule['CLOSE_WINDOW'].iloc[0]
 
         # The sunscreen should be open during low irradiation.
         # An open window may stay open.
@@ -166,55 +159,45 @@ async def apply_schedule():
                 if close_window_now:
                     logging.info('Fenster werden geschlossen')
                     arduinoclient.close_window()
-                    close_window_at = None
                 arduinoclient.open_curtain()
                 tuyaclient.open_curtain()
                 if is_closed is not None:
-                    if close_window_now:
+                    if close_window_now and window_is_closed is not None:
                         await telegram.bot_send('Die Markise wird eingefahren und die Fenster werden geschlossen {}'.format(reason))
                     else:
                         await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
+                if close_window_now:
+                    window_is_closed = True
             is_closed = close_now
         else:
             if close_window_now:
                 logging.info('Fenster werden automatisch geschlossen {}'.format(close_window_reason))
                 arduinoclient.close_window()
-                close_window_at = None
-                await telegram.bot_send(text='Die Fenster werden geschlossen {}'.format(close_window_reason))
+                if window_is_closed is not None:
+                    await telegram.bot_send(text='Die Fenster werden geschlossen {}'.format(close_window_reason))
+                window_is_closed = True
 
     except:
         logging.exception('Fehler beim Anwenden des Plans')
 
 
 async def open_window(args):
-    global close_window_at
+    global window_is_closed
 
     if len(args) != 1:
         return
 
     if args[0] == 'auf':
         logging.info('Fenster werden geöffnet')
-        close_window_at = weather.get_next_sunset()
         arduinoclient.open_window()
+        window_is_closed = False
         await telegram.bot_send(text='Die Fenster werden geöffnet')
 
     if args[0] == 'zu':
         logging.info('Fenster werden geschlossen')
         arduinoclient.close_window()
-        close_window_at = None
+        window_is_closed = True
         await telegram.bot_send(text='Die Fenster werden geschlossen')
-
-    if args[0].isnumeric():
-        minutes = float(args[0])
-        if minutes < 1:
-            minutes = 60
-
-        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-        close_window_at = now + datetime.timedelta(minutes = minutes)
-
-        logging.info('Fenster werden geöffnet')
-        arduinoclient.open_window()
-        await telegram.bot_send(text='Die Fenster werden für {:g} Minuten geöffnet'.format(minutes))
 
 loop = None
 async def main():
