@@ -185,6 +185,18 @@ async def on_window_command(command, args):
     global window_is_closed
 
     if command == 'fenster_auf':
+        if radar_rain:
+            await telegram.bot_send(text='Es regnet gerade')
+            return
+
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        current_schedule = schedule[schedule.index.to_pydatetime() > now]
+        reason = current_schedule['REASON'].iloc[0]
+        close_window_now = current_schedule['CLOSE_WINDOW'].iloc[0]
+        if close_window_now:
+            await telegram.bot_send(text='Es ist gerade schlechtes Wetter {}'.format(reason))
+            return
+
         logging.info('Fenster werden geöffnet')
         arduinoclient.open_window()
         window_is_closed = False
