@@ -183,6 +183,8 @@ async def apply_schedule():
 
 async def on_window_command(command, args):
     global window_is_closed
+    global schedule
+    global radar_rain
 
     if command == 'fenster_auf':
         if radar_rain:
