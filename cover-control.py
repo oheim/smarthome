@@ -113,6 +113,7 @@ async def apply_schedule():
         # Thus the prediction for now is the first schedule entry the the timestamp is greater than 'now'.
         current_schedule = schedule[schedule.index.to_pydatetime() > now]
         reason = current_schedule['REASON'].iloc[0]
+        extended_reason = current_schedule['EXTENDED_REASON'].iloc[0]
 
         if is_closed:
             close_now = current_schedule['WEATHER_PREDICTION'].iloc[0] != 'bad'
@@ -129,6 +130,7 @@ async def apply_schedule():
         if radar_rain:
             close_now = False
             reason = '🌦'
+            extended_reason += '🌦'
 
         close_window_reason = reason
         if window_is_closed:
@@ -141,11 +143,13 @@ async def apply_schedule():
         if close_now and not is_closed and not sun_is_shining():
             close_now = False
             reason = '🌅'
+            extended_reason += '🌅'
         if close_now and is_closed and sun_is_not_shining():
             close_now = False
             reason = '🌄'
+            extended_reason += '🌅'
 
-        logging.info('Status: {}'.format(reason))
+        logging.info('Status: {}'.format(extended_reason))
 
         if not (is_closed == close_now):
             if close_now:
