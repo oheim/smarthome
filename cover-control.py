@@ -33,7 +33,7 @@ import logging
 import dotenv
 import asyncio
 
-from modules import weather, arduinoclient, tuyaclient, telegram, mqttclient
+from modules import weather, arduinoclient, telegram, mqttclient
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                      level=logging.INFO)
@@ -41,7 +41,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 config = dotenv.dotenv_values("Sunscreen.env")
 weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['ARDUINO_PORT']))
-tuyaclient.set_cover_device(device_id=config['TUYA_DEVICE_ID'], hostname=config['TUYA_HOSTNAME'], local_key=config['TUYA_LOCAL_KEY'])
+
 
 background = timeloop.Timeloop()
 
@@ -102,6 +102,7 @@ def sun_is_not_shining():
 is_closed = None
 window_is_closed = None
 async def apply_schedule():
+    global config
     global is_closed
     global window_is_closed
     global schedule
@@ -155,7 +156,7 @@ async def apply_schedule():
             if close_now:
                 logging.info('Markise wird ausgefahren %s', reason)
                 arduinoclient.close_curtain()
-                tuyaclient.close_curtain()
+                mqttclient.shelly_command(config['COVER_CONTROL_DEVICE_ID'], config['COVER_CONTROL_COMPONENT_ID'], 'close')
                 if is_closed is not None:
                     await telegram.bot_send('Die Markise wird ausgefahren {}'.format(reason))
             else:
@@ -164,7 +165,7 @@ async def apply_schedule():
                     logging.info('Fenster werden geschlossen')
                     arduinoclient.close_window()
                 arduinoclient.open_curtain()
-                tuyaclient.open_curtain()
+                mqttclient.shelly_command(config['COVER_CONTROL_DEVICE_ID'], config['COVER_CONTROL_COMPONENT_ID'], 'open')
                 if is_closed is not None:
                     if close_window_now and window_is_closed is not None:
                         await telegram.bot_send('Die Markise wird eingefahren und die Fenster werden geschlossen {}'.format(reason))

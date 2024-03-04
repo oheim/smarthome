@@ -27,6 +27,16 @@ def on_message(client, userdata, msg):
 	if len(power_history) > 10:
 		power_history.pop(0)
 
+# Send commands to shelly devices over MQTT
+# see https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Mqtt/#mqtt-control
+
+def shelly_command(topic_prefix, component_id, command):
+	global client
+
+	topic = "%s/command/%s" % (topic_prefix, component_id)
+	client.publish(topic, command, qos=1)
+
+
 client = None
 def connect(server, user, password, topic):
 	global client
