@@ -1,4 +1,6 @@
 import time
+import string
+import random
 import paho.mqtt.client as paho
 from paho import mqtt
 
@@ -38,14 +40,18 @@ def shelly_command(topic_prefix, component_id, command):
 
 
 client = None
-def connect(server, user, password, topic):
+def connect(server, user, password, topic, message_callback = None):
 	global client
 
-	client = paho.Client(client_id="smarthome", userdata=None, protocol=paho.MQTTv5)
+	client_id = 'smarthome-' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+	client = paho.Client(client_id=client_id, userdata=None, protocol=paho.MQTTv5)
 #	client.tls_set(tls_version=mqtt.client.ssl.PROTOCOL_TLS)
 	client.username_pw_set(user, password)
 	client.connect(server, 1883)
-	client.on_message = on_message
+	if message_callback is None:
+		client.on_message = on_message
+	else:
+		client.on_message = message_callback
 
 	client.subscribe(topic, qos=1)
 
