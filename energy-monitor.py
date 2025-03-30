@@ -92,7 +92,8 @@ async def main():
 
 	await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=int(config['TELEGRAM_CHAT_ID']))
 
-	mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], topic=config['MQTT_TOPIC'], message_callback=on_mqtt_message)
+	mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], message_callback=on_mqtt_message)
+	mqttclient.subscribe(config['MQTT_TOPIC'])
 
 	try:
 		while True:

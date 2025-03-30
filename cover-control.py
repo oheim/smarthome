@@ -32,6 +32,7 @@ import timeloop
 import logging
 import dotenv
 import asyncio
+import json
 
 from modules import weather, arduinoclient, telegram, mqttclient
 
@@ -93,25 +94,27 @@ def bg_apply_schedule():
 
 def sun_is_shining():
     global config
-    return mqttclient.is_power_above(int(config['PV_PEAK_POWER']) / 4)
+    return is_power_above(int(config['PV_PEAK_POWER']) / 4)
 
 def sun_is_not_shining():
     global config
-    return mqttclient.is_power_below(int(config['PV_PEAK_POWER']) / 8)
+    return is_power_below(int(config['PV_PEAK_POWER']) / 8)
 
 is_closed = None
 window_is_closed = None
+dont_close_window_until = None
 async def apply_schedule():
     global config
     global is_closed
     global window_is_closed
     global schedule
     global radar_rain
+    global dont_close_window_until
 
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         # The schedule contains predictions for certain timestamps about the wheather within the 'last 1 hour'.
-        # Thus the prediction for now is the first schedule entry the the timestamp is greater than 'now'.
+        # Thus the prediction for now is the first schedule entry where the timestamp is greater than 'now'.
         current_schedule = schedule[schedule.index.to_pydatetime() > now]
         reason = current_schedule['REASON'].iloc[0]
         extended_reason = current_schedule['EXTENDED_REASON'].iloc[0]
@@ -134,7 +137,7 @@ async def apply_schedule():
             extended_reason += '🌦'
 
         close_window_reason = reason
-        if window_is_closed:
+        if window_is_closed or (dont_close_window_until is not None and dont_close_window_until > now):
             close_window_now = False
         else:
             close_window_now = radar_rain or current_schedule['CLOSE_WINDOW'].iloc[0]
@@ -174,13 +177,14 @@ async def apply_schedule():
                 if close_window_now:
                     window_is_closed = True
             is_closed = close_now
-        else:
-            if close_window_now:
-                logging.info('Fenster werden automatisch geschlossen {}'.format(close_window_reason))
-                arduinoclient.close_window()
-                if window_is_closed is not None:
-                    await telegram.bot_send(text='Die Fenster werden geschlossen {}'.format(close_window_reason))
-                window_is_closed = True
+
+        if close_window_now:
+            logging.info('Fenster werden automatisch geschlossen {}'.format(close_window_reason))
+            arduinoclient.close_window()
+            if window_is_closed is not None:
+                await telegram.bot_send(text='Die Fenster werden geschlossen {}'.format(close_window_reason))
+            window_is_closed = True
+            dont_close_window_until = None
 
     except:
         logging.exception('Fehler beim Anwenden des Plans')
@@ -190,21 +194,12 @@ async def on_window_command(command, args):
     global window_is_closed
     global schedule
     global radar_rain
+    global dont_close_window_until
+
 
     if command == 'fenster_auf':
-        if radar_rain:
-            await telegram.bot_send(text='Es regnet gerade')
-            return
-
-        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-        current_schedule = schedule[schedule.index.to_pydatetime() > now]
-        reason = current_schedule['REASON'].iloc[0]
-        close_window_now = current_schedule['CLOSE_WINDOW'].iloc[0]
-        if close_window_now:
-            await telegram.bot_send(text='Es ist gerade schlechtes Wetter {}'.format(reason))
-            return
-
         logging.info('Fenster werden geöffnet')
+        dont_close_window_until = datetime.datetime.now(datetime.timezone.utc).astimezone() + datetime.timedelta(minutes = 10)
         arduinoclient.open_window()
         window_is_closed = False
         await telegram.bot_send(text='Die Fenster werden geöffnet')
@@ -213,7 +208,67 @@ async def on_window_command(command, args):
         logging.info('Fenster werden geschlossen')
         arduinoclient.close_window()
         window_is_closed = True
+        dont_close_window_until = None
         await telegram.bot_send(text='Die Fenster werden geschlossen')
+
+# Receive power measurements for a PV device over MQTT.
+# see cover-control-shelly.js
+
+power_history = []
+
+def is_power_above(threshold):
+        if len(power_history) == 0:
+                return False
+        else:
+                return min(power_history) > threshold
+
+def is_power_below(threshold):
+        if len(power_history) == 0:
+                return False
+        else:
+                return max(power_history) < threshold
+
+def on_power_measurement(power_measurement):
+        global power_history
+
+        power_history.append(power_measurement)
+        if len(power_history) > 10:
+                power_history.pop(0)
+
+## Receive BLE button commands
+
+def on_ble_event(payload):
+        global is_closed
+        global window_is_closed
+        global dont_close_window_until
+
+        if payload['addr'] == '7c:c6:b6:64:dc:ee':
+                if payload['Button'] == 2032:
+                        logging.info('BLE: Fenster auf')
+                        dont_close_window_until = datetime.datetime.now(datetime.timezone.utc).astimezone() + datetime.timedelta(minutes = 10)
+                        arduinoclient.open_window()
+                        window_is_closed = False
+                if payload['Button'] == 1016:
+                        logging.info('BLE: Fenster zu')
+                        arduinoclient.close_window()
+                        window_is_closed = True
+                        dont_close_window_until = None
+                if payload['Button'] == 508:
+                        logging.info('BLE: Markise öffnen')
+                        arduinoclient.open_curtain()
+                        is_closed = False
+                if payload['Button'] == 254:
+                        logging.info('BLE: Markise schließen')
+                        arduinoclient.close_curtain()
+                        is_closed = True
+
+
+def on_message(client, userdata, msg):
+        if msg.topic == 'shellies/ble':
+                on_ble_event(json.loads(msg.payload))
+        else:
+                on_power_measurement(int(msg.payload))
+
 
 loop = None
 async def main():
@@ -222,7 +277,9 @@ async def main():
 
     loop = asyncio.get_running_loop()
 
-    mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], topic=config['MQTT_TOPIC'])
+    mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], message_callback=on_message)
+    mqttclient.subscribe(config['MQTT_TOPIC'])
+    mqttclient.subscribe('shellies/ble')
 
     await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], commands=['fenster_auf', 'fenster_zu'], command_callback=on_window_command)
 
