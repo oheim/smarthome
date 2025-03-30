@@ -16,8 +16,6 @@ pip3 install python-dotenv --upgrade
 
 Register telegram bot and add it to a new group.
 
-Set up TP-Link Smart Plug.
-
 Create config file `[Device Name].env` (you may copy `Washer.env.template`).
 
 Start monitor script
