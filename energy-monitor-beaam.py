@@ -61,10 +61,14 @@ def update_measurement():
     global average_power
     global config
 
-    current_power_production = find_value_by_key(
-        get_energy_flow_states(),
-        'POWER_PRODUCTION')
-        
+    try:
+        current_power_production = find_value_by_key(
+            get_energy_flow_states(),
+            'POWER_PRODUCTION')
+    except HTTPError as err:
+        logging.error('Failed to update measurement', err)
+        return
+
     smoothing_factor = 0.125
     average_power += smoothing_factor * (current_power_production - average_power)
     mqttclient.publish(config['MQTT_TOPIC'], "%d" % (average_power))
