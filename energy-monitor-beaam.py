@@ -65,8 +65,8 @@ def update_measurement():
         current_power_production = find_value_by_key(
             get_energy_flow_states(),
             'POWER_PRODUCTION')
-    except HTTPError as err:
-        logging.error('Failed to update measurement', err)
+    except Exception as err:
+        logging.exception('Failed to update measurement')
         return
 
     smoothing_factor = 0.125
