@@ -144,14 +144,16 @@ async def apply_schedule():
 
         # The sunscreen should be open during low irradiation.
         # An open window may stay open.
-        if close_now and not is_closed and not sun_is_shining():
-            close_now = False
-            reason = '🌅'
-            extended_reason += '🌅'
-        if close_now and is_closed and sun_is_not_shining():
-            close_now = False
-            reason = '🌄'
-            extended_reason += '🌅'
+        #
+        # TODO: In summer we need to control each direction differently
+        # if close_now and not is_closed and not sun_is_shining():
+        #     close_now = False
+        #     reason = '🌅'
+        #     extended_reason += '🌅'
+        # if close_now and is_closed and sun_is_not_shining():
+        #     close_now = False
+        #     reason = '🌄'
+        #     extended_reason += '🌅'
 
         logging.info('Status: {}'.format(extended_reason))
 
