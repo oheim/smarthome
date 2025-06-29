@@ -144,13 +144,15 @@ def get_sunscreen_schedule():
     good_idx &= calm_idx
     bad_idx |= windy_idx
 
-    thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 45.0
-    thunderless_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] < 40.0
-    schedule.loc[thundery_idx, 'REASON'] = '⛈'
-    schedule.loc[thunderless_idx == False, 'EXTENDED_REASON'] += '⛈'
-    schedule.loc[thundery_idx, 'CLOSE_WINDOW'] = True
-    good_idx &= thunderless_idx
-    bad_idx |= thundery_idx
+    # In summer, there is always a high risk of a thunderstorm, we can't use the forecast
+    #
+    #thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 80.0
+    #thunderless_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] < 70.0
+    #schedule.loc[thundery_idx, 'REASON'] = '⛈'
+    #schedule.loc[thunderless_idx == False, 'EXTENDED_REASON'] += '⛈'
+    #schedule.loc[thundery_idx, 'CLOSE_WINDOW'] = True
+    #good_idx &= thunderless_idx
+    #bad_idx |= thundery_idx
 
     schedule[good_idx] = ['good', False, '☀️', '☀️']
     schedule.loc[bad_idx, 'WEATHER_PREDICTION'] = 'bad'
