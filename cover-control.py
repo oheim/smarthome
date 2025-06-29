@@ -243,21 +243,21 @@ def on_ble_event(payload):
         global dont_close_window_until
 
         if payload['addr'] == '7c:c6:b6:64:dc:ee':
-                if payload['Button'] == 2032:
+                if payload['Button'] == 1024:
                         logging.info('BLE: Fenster auf')
                         dont_close_window_until = datetime.datetime.now(datetime.timezone.utc).astimezone() + datetime.timedelta(minutes = 10)
                         arduinoclient.open_window()
                         window_is_closed = False
-                if payload['Button'] == 1016:
+                if payload['Button'] == 512:
                         logging.info('BLE: Fenster zu')
                         arduinoclient.close_window()
                         window_is_closed = True
                         dont_close_window_until = None
-                if payload['Button'] == 508:
+                if payload['Button'] == 256:
                         logging.info('BLE: Markise öffnen')
                         arduinoclient.open_curtain()
                         is_closed = False
-                if payload['Button'] == 254:
+                if payload['Button'] == 128:
                         logging.info('BLE: Markise schließen')
                         arduinoclient.close_curtain()
                         is_closed = True
