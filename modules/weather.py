@@ -22,7 +22,6 @@
 from wetterdienst import Wetterdienst
 
 from wetterdienst.provider.dwd.mosmix import DwdMosmixType, DwdForecastDate
-from wetterdienst.provider.dwd.mosmix.metadata import DwdMosmixParameter
 
 from wetterdienst.provider.dwd.radar import DwdRadarValues
 from wetterdienst.provider.dwd.radar.metadata import DwdRadarDate, DwdRadarParameter
@@ -52,8 +51,8 @@ def set_location(latitude, longitude):
     
     # Find 2 local forecast stations
     api = Wetterdienst(provider = 'dwd', network = 'mosmix')
-    stations = api(parameter="large", mosmix_type=DwdMosmixType.LARGE)
-    local_stations = stations.filter_by_rank(latlon=(latitude, longitude), rank=2).values
+    mosmix_request = api(parameter="large", mosmix_type=DwdMosmixType.LARGE)
+    local_stations = mosmix_request.filter_by_rank(latlon=(latitude, longitude), rank=2).values
     
     # Determine local index in the radolan grid
     proj_stereo = wrl.georef.create_osr("dwd-radolan")
@@ -73,71 +72,82 @@ def get_sunscreen_schedule():
     global local_stations
     global observer
     
-    mosmix_forecast = local_stations.read_mosmix_large(DwdForecastDate.LATEST)
-
-    # filter_by_rank seems to be broken and returns all stations, thus we cannot iterate over all results
-    # for station_forecast in mosmix_forecast:
-    #     forecast = forecast.append(station_forecast)
-    forecast = pd.concat([next(mosmix_forecast), next(mosmix_forecast)])
+    PROBABILITY_PRECIPITATION_LAST_1H = 'wwp'
+    PRECIPITATION_DURATION = 'drr1'
+    PROBABILITY_DRIZZLE_LAST_1H = 'wwz'
+    PROBABILITY_FOG_LAST_1H = 'wwm'
+    PROBABILITY_THUNDER_LAST_1H = 'wwt'
+    WIND_GUST_MAX_LAST_1H = 'fx1'
+    SUNSHINE_DURATION = 'sund1'
+    TEMPERATURE_DEW_POINT_MEAN_200 = 'td'
+    ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200 = 'e_td'
+    TEMPERATURE_AIR_MEAN_200 = 'ttt'
+    ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200 = 'e_ttt'
+    CLOUD_COVER_EFFECTIVE = 'neff'
     
+    forecast = pd.DataFrame()
+    for local_station in local_stations.all().df_stations['station_id']:
+        mosmix_forecast = local_stations.read_mosmix_large(station_id = local_station, date = DwdForecastDate.LATEST)
+        forecast = pd.concat([forecast, mosmix_forecast.to_pandas()])
+
     # Aggregate over all stations (use pessimistic values)
-    forecast = forecast.groupby('datetime').agg({
-            DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value: 'max',
-            DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value: 'max',
-            DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value: 'max',
-            DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value: 'max',
-            DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value: 'max',
-            DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value: 'max',
-            DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value: 'max',
-            DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value: 'max',
-            DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value: 'max',
-            DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value: 'min',
-            DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value: 'max',
-            DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value: 'min'
+    forecast = forecast.groupby('date').agg({
+            PROBABILITY_PRECIPITATION_LAST_1H: 'max',
+            PRECIPITATION_DURATION: 'max',
+            PROBABILITY_DRIZZLE_LAST_1H: 'max',
+            PROBABILITY_FOG_LAST_1H: 'max',
+            PROBABILITY_THUNDER_LAST_1H: 'max',
+            WIND_GUST_MAX_LAST_1H: 'max',
+            SUNSHINE_DURATION: 'max',
+            TEMPERATURE_DEW_POINT_MEAN_200: 'max',
+            ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200: 'max',
+            TEMPERATURE_AIR_MEAN_200: 'min',
+            ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200: 'max',
+            CLOUD_COVER_EFFECTIVE: 'min'
             })
 
     # Default
     schedule = pd.DataFrame({'WEATHER_PREDICTION': 'ok', 'CLOSE_WINDOW': False, 'REASON': '', 'EXTENDED_REASON': ''}, index = forecast.index, columns=['WEATHER_PREDICTION', 'CLOSE_WINDOW', 'REASON', 'EXTENDED_REASON'])
 
-    not_sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] < 5 * 60
-    sunny_idx = forecast[DwdMosmixParameter.LARGE.SUNSHINE_DURATION.value] >= 10 * 60
+    not_sunny_idx = forecast[SUNSHINE_DURATION] < 5 * 60
+    sunny_idx = forecast[SUNSHINE_DURATION] >= 10 * 60
     schedule.loc[not_sunny_idx, 'REASON'] = '⛅'
     schedule.loc[sunny_idx == False, 'EXTENDED_REASON'] += '⛅'
     good_idx = sunny_idx
     bad_idx = not_sunny_idx
 
-    cloudy_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] > 7/8 * 100.0
-    clear_idx = forecast[DwdMosmixParameter.LARGE.CLOUD_COVER_EFFECTIVE.value] < 6/8 * 100.0
+    cloudy_idx = forecast[CLOUD_COVER_EFFECTIVE] > 7/8 * 100.0
+    clear_idx = forecast[CLOUD_COVER_EFFECTIVE] < 6/8 * 100.0
     schedule.loc[cloudy_idx, 'REASON'] = '☁️'
     schedule.loc[clear_idx == False, 'EXTENDED_REASON'] += '☁️'
     good_idx &= clear_idx
     bad_idx |= cloudy_idx
 
-    rainy_idx = ((forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] > 45.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] > 600)) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] > 45.0)
-    dry_idx = (forecast[DwdMosmixParameter.LARGE.PROBABILITY_PRECIPITATION_LAST_1H.value] < 40.0) & (forecast[DwdMosmixParameter.LARGE.PRECIPITATION_DURATION.value] < 120) & (forecast[DwdMosmixParameter.LARGE.PROBABILITY_DRIZZLE_LAST_1H.value] < 40.0)
+    rainy_idx = ((forecast[PROBABILITY_PRECIPITATION_LAST_1H] > 45.0) & (forecast[PRECIPITATION_DURATION] > 600)) | (forecast[PROBABILITY_DRIZZLE_LAST_1H] > 45.0)
+    dry_idx = (forecast[PROBABILITY_PRECIPITATION_LAST_1H] < 40.0) & (forecast[PRECIPITATION_DURATION] < 120) & (forecast[PROBABILITY_DRIZZLE_LAST_1H] < 40.0)
     schedule.loc[rainy_idx, 'REASON'] = '🌧'
     schedule.loc[dry_idx == False, 'EXTENDED_REASON'] += '🌧'
     good_idx &= dry_idx
     bad_idx |= rainy_idx
 
-    dewy_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] > forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value]) | (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] > 45.0)
-    arid_idx = (forecast[DwdMosmixParameter.LARGE.TEMPERATURE_DEW_POINT_MEAN_200.value] + forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200.value] < forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value]) & (forecast[DwdMosmixParameter.LARGE.PROBABILITY_FOG_LAST_1H.value] < 40.0)
+    dewy_idx = (forecast[TEMPERATURE_DEW_POINT_MEAN_200] > forecast[TEMPERATURE_AIR_MEAN_200]) | (forecast[PROBABILITY_FOG_LAST_1H] > 45.0)
+    arid_idx = (forecast[TEMPERATURE_DEW_POINT_MEAN_200] + forecast[ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200] < forecast[TEMPERATURE_AIR_MEAN_200] - forecast[ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200]) & (forecast[PROBABILITY_FOG_LAST_1H] < 40.0)
     schedule.loc[dewy_idx, 'REASON'] = '🌫'
     schedule.loc[arid_idx == False, 'EXTENDED_REASON'] += '🌫'
     schedule.loc[dewy_idx, 'CLOSE_WINDOW'] = True
     good_idx &= arid_idx
     bad_idx |= dewy_idx
 
-    cold_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] - forecast[DwdMosmixParameter.LARGE.ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200.value] < 277.15 # 4 °C
-    warm_idx = forecast[DwdMosmixParameter.LARGE.TEMPERATURE_AIR_MEAN_200.value] >= 285.15 # 12 °C
+    cold_idx = forecast[TEMPERATURE_AIR_MEAN_200] - forecast[ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200] < 277.15 # 4 °C
+    warm_idx = forecast[TEMPERATURE_AIR_MEAN_200] >= 285.15 # 12 °C
     schedule.loc[cold_idx, 'REASON'] = '❄️'
     schedule.loc[warm_idx == False, 'EXTENDED_REASON'] += '❄️'
     schedule.loc[cold_idx, 'CLOSE_WINDOW'] = True
     good_idx &= warm_idx
     bad_idx |= cold_idx
 
-    windy_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] > 11
-    calm_idx = forecast[DwdMosmixParameter.LARGE.WIND_GUST_MAX_LAST_1H.value] < 10
+    windy_idx = forecast[WIND_GUST_MAX_LAST_1H] > 11
+    calm_idx = forecast[WIND_GUST_MAX_LAST_1H] < 10
     schedule.loc[windy_idx, 'REASON'] = '💨'
     schedule.loc[calm_idx == False, 'EXTENDED_REASON'] += '💨'
     schedule.loc[windy_idx, 'CLOSE_WINDOW'] = True
@@ -146,8 +156,8 @@ def get_sunscreen_schedule():
 
     # In summer, there is always a high risk of a thunderstorm, we can't use the forecast
     #
-    #thundery_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] > 80.0
-    #thunderless_idx = forecast[DwdMosmixParameter.LARGE.PROBABILITY_THUNDER_LAST_1H.value] < 70.0
+    #thundery_idx = forecast[PROBABILITY_THUNDER_LAST_1H] > 80.0
+    #thunderless_idx = forecast[PROBABILITY_THUNDER_LAST_1H] < 70.0
     #schedule.loc[thundery_idx, 'REASON'] = '⛈'
     #schedule.loc[thunderless_idx == False, 'EXTENDED_REASON'] += '⛈'
     #schedule.loc[thundery_idx, 'CLOSE_WINDOW'] = True
