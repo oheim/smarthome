@@ -177,7 +177,7 @@ async def apply_schedule():
                     else:
                         await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
                 if close_window_now:
-                    window_is_closed = True
+                    window_is_closed = None
             is_closed = close_now
 
         if close_window_now:
