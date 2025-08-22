@@ -28,6 +28,7 @@ import datetime
 import zoneinfo
 import asyncio
 import sys
+import logging
 from requests.auth import HTTPDigestAuth
 from bs4 import BeautifulSoup
 import urllib3
