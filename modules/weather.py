@@ -21,7 +21,7 @@
 
 from wetterdienst import Wetterdienst
 
-from wetterdienst.provider.dwd.mosmix import DwdMosmixType, DwdForecastDate
+from wetterdienst.provider.dwd.mosmix import DwdForecastDate
 
 from wetterdienst.provider.dwd.radar import DwdRadarValues
 from wetterdienst.provider.dwd.radar.metadata import DwdRadarDate, DwdRadarParameter
@@ -51,7 +51,7 @@ def set_location(latitude, longitude):
     
     # Find 2 local forecast stations
     api = Wetterdienst(provider = 'dwd', network = 'mosmix')
-    mosmix_request = api(parameter="large", mosmix_type=DwdMosmixType.LARGE)
+    mosmix_request = api(parameters=("hourly", "large"))
     local_stations = mosmix_request.filter_by_rank(latlon=(latitude, longitude), rank=2).values
     
     # Determine local index in the radolan grid
@@ -105,6 +105,8 @@ def get_sunscreen_schedule():
             ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200: 'max',
             CLOUD_COVER_EFFECTIVE: 'min'
             })
+
+    forecast.index = pd.to_datetime(forecast.index)
 
     # Default
     schedule = pd.DataFrame({'WEATHER_PREDICTION': 'ok', 'CLOSE_WINDOW': False, 'REASON': '', 'EXTENDED_REASON': ''}, index = forecast.index, columns=['WEATHER_PREDICTION', 'CLOSE_WINDOW', 'REASON', 'EXTENDED_REASON'])
