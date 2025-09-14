@@ -59,7 +59,7 @@ def read_meter_value():
 
     soup = BeautifulSoup(res.content, 'html.parser')
     sel = soup.find(id='meterform_select_meter')
-    meter_val = sel.findChild()
+    meter_val = sel.find()
     meter_id = meter_val.attrs.get('value')
     action = 'showMeterProfile'
     post_data = "tkn=" + token + "&action=" + action + "&mid=" + meter_id
