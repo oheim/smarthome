@@ -72,24 +72,33 @@ def forward_data_points():
     global influx_api
     
     for device in devices:
+        if 'ValveTappet' in device['deviceServiceIds']:
+            valve_position = call_api('devices/' + device['id'] + '/services/ValveTappet/state')
+            point = (
+                Point("BOSCH")
+                .tag("unit", "%")
+                .field("Ventil/" + device['name'], int(valve_position['position']))
+            )
+            influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+    
         if device['deviceModel'] == 'ROOM_CLIMATE_CONTROL':
             room = rooms[device['roomId']]
+
             temperature_level = call_api('devices/' + device['id'] + '/services/TemperatureLevel/state')
-            
             point = (
                 Point("BOSCH")
                 .tag("unit", "°C")
                 .field("Temperaturen/" + room['name'], float(temperature_level['temperature']))
             )
-        elif device['deviceModel'] == 'BOILER':
+            influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+
+        if device['deviceModel'] == 'BOILER':
             boiler = call_api('devices/' + device['id'] + '/services/BoilerHeating/state')
             point = (
                 Point("BOSCH")
                 .field("Boiler", boiler['heatDemand'] == 'HEAT_DEMAND')
             )
-        else:
-            continue
-        influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+            influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 
 loop = None
 influx_api = None
