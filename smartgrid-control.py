@@ -36,7 +36,25 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 config = dotenv.dotenv_values("SmartGrid.env")
 
 background = timeloop.Timeloop()
-    
+
+# SG-Ready spec
+#   10 = shutdown or limited to 4.2 kW
+#   00 = normal operation
+#   01 = increased operation
+#   11 = maximum operation (only in spec 1.0, not supported by spec 1.1)
+#
+# My heat pump doesn't follow the specification
+#   10 = shutdown
+#   00 = (!) reduced operation
+#   01 = (!) normal operation
+#   11 = (!) increased operation
+#
+# The relays have been wired such that the two states for normal and increased operation
+# are compliant with the specification, but the other two states are not SG Ready compliant.
+#   10 = (!) reduced operation
+#   00 = normal operation
+#   01 = increased operation
+#   11 = (!) shutdown
 class SG_Ready(enum.Enum):
     SHUTDOWN = 1
     LOW = 2
@@ -57,6 +75,9 @@ def set_sg_ready(new_state: SG_Ready):
     global last_sg_ready
     if last_sg_ready is None or last_sg_ready != new_state:
         logging.info('SG-Ready: ' + new_state.name)
+
+        # this is not SG ready compliant!
+        # see comment above
         set_sg_ready_relay(1, new_state == SG_Ready.SHUTDOWN or new_state == SG_Ready.LOW)
         set_sg_ready_relay(2, new_state == SG_Ready.SHUTDOWN or new_state == SG_Ready.HIGH)
         last_sg_ready = new_state
@@ -79,9 +100,9 @@ def is_pv_production_high():
             |> filter(fn: (r) => r._measurement == "SITE")
             |> filter(fn: (r) => r._field == "POWER_PRODUCTION")
             |> filter(fn: (r) => r.unit == "W")
-            |> min()
+            |> median()
     """)
-    return result is not None and result > 3500
+    return result is not None and result > 3200
 
 def is_battery_well_charged():
     result = influx_query_single_value("""
@@ -94,70 +115,55 @@ def is_battery_well_charged():
     """)
     return result is not None and result >= 40
 
-def is_power_cheap():
-    current_price = influx_query_single_value("""
+def is_not_self_sufficient():
+    self_sufficiency = influx_query_single_value("""
         from(bucket: "%BUCKET%")
-            |> range(start: -15m, stop: 15m)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> max()
+          |> range(start: -5m)
+          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r._field == "SELF_SUFFICIENCY")
+          |> last()
     """)
-    last_week_avg_price = influx_query_single_value("""
-        from(bucket: "%BUCKET%")
-            |> range(start: -7d)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> mean()
-    """)
-    if current_price is None or last_week_avg_price is None or current_price > last_week_avg_price:
-        return False
+    return self_sufficiency is not None and self_sufficiency < 10
 
-    next_min_price = influx_query_single_value("""
+def is_self_sufficient():
+    self_sufficiency = influx_query_single_value("""
         from(bucket: "%BUCKET%")
-            |> range(start: 0h, stop: 4h)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> min()
+          |> range(start: -5m)
+          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r._field == "SELF_SUFFICIENCY")
+          |> last()
     """)
-    next_max_price = influx_query_single_value("""
+    return self_sufficiency is not None and self_sufficiency > 90
+
+def is_charging_from_grid():
+    charge_battery_from_grid = influx_query_single_value("""
         from(bucket: "%BUCKET%")
-            |> range(start: 0h, stop: 4h)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> max()
+          |> range(start: -5m)
+          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r.unit == "W")
+          |> last()
+          |> keep(columns: ["unit", "_field", "_value"])
+          |> pivot(rowKey: ["unit"], columnKey: ["_field"], valueColumn: "_value")
+          |> filter(fn: (r) => r.POWER_STORAGE < -4000 and r.POWER_GRID > 1000)
+          |> columns()
     """)
-    if next_min_price is None or next_max_price is None or (next_max_price - next_min_price) < 0.1:
-        return False
-    return current_price <= next_min_price + 0.2 * (next_max_price - next_min_price)
+    return charge_battery_from_grid is not None
 
 def is_power_expensive():
-    current_price = influx_query_single_value("""
+    # We assume that the heat pump will run for 45 minutes = 3 * 15 minutes.
+    # We compute the power price when the heat pump is starting now vs. when it is started 15, 30 or 45 minutes later.
+    # If there is going to be a significantly lower price later, we consider the current price as expensive.
+    best_later_price_difference = influx_query_single_value("""
         from(bucket: "%BUCKET%")
-            |> range(start: -15m, stop: 15m)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> max()
+          |> range(start: -5m, stop: 2h)
+          |> filter(fn: (r) => r._measurement == "TIBBER" and r._field == "priceInfo")
+          |> movingAverage(n: 3)
+          |> difference()
+          |> limit(n: 3)
+          |> cumulativeSum()
+          |> min()
     """)
-    if current_price is None:
-        return False
-
-    next_min_price = influx_query_single_value("""
-        from(bucket: "%BUCKET%")
-            |> range(start: 0h, stop: 2h)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> min()
-    """)
-    next_max_price = influx_query_single_value("""
-        from(bucket: "%BUCKET%")
-            |> range(start: 0h, stop: 2h)
-            |> filter(fn: (r) => r._measurement == "TIBBER")
-            |> filter(fn: (r) => r._field == "priceInfo")
-            |> max()
-    """)
-    if next_min_price is None or next_max_price is None or (next_max_price - next_min_price) < 0.1:
-        return False
-    return current_price >= next_min_price + 0.5 * (next_max_price - next_min_price)
+    return best_later_price_difference is not None and best_later_price_difference < -0.006
 
 def is_heat_pump_running():
     power_consumption = influx_query_single_value("""
@@ -176,12 +182,11 @@ def update_sg_ready():
         new_sg_ready_state = SG_Ready.NORMAL
         if is_heat_pump_running():
             # delay stop of heat pump while power is cheap
-            if is_battery_well_charged():
-                if is_pv_production_high() or is_power_cheap():
-                    new_sg_ready_state = SG_Ready.HIGH
+            if is_charging_from_grid() or (is_battery_well_charged() and (is_pv_production_high() or is_not_self_sufficient())):
+                new_sg_ready_state = SG_Ready.HIGH
         else:
             # delay start of heat pump while power is expensive
-            if not is_battery_well_charged() and is_power_expensive():
+            if is_power_expensive() and not is_pv_production_high() and (not is_self_sufficient() or not is_battery_well_charged()):
                 new_sg_ready_state = SG_Ready.LOW
 
         set_sg_ready(new_sg_ready_state)
