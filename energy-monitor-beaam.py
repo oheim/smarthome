@@ -15,14 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""This program has three functions:
-
-  (1) Periodically poll the Neoom Beaam API and publish all values to InfluxDB
-  
-  (2) Receive information about PV production from a shelly device (Balkonkraftwerk)
-      and publish PV production to InfluxDB
-  
-  (3) Receive events from Shelly BLE devices via MQTT and publish them to InfluxDB
+"""Periodically poll the Neoom Beaam API and publish all values to InfluxDB
 
 @author: Oliver Heimlich <oheim@posteo.de>
 """
@@ -130,37 +123,6 @@ def update_measurement():
         logging.exception('Failed to update measurement')
         return
 
-def on_message(client, userdata, msg):
-    if msg.topic == 'shellies/ble':
-        on_ble_event(json.loads(msg.payload))
-    else:
-        on_bk_power(float(msg.payload))
-
-def on_ble_event(payload):
-    global influx_api
-    
-    if 'addr' in payload and 'Temperature' in payload and 'Humidity' in payload:
-        point = (
-            Point('SHELLY')
-            .tag('addr', payload['addr'])
-            .field('Temperature', float(payload['Temperature']))
-            .field('Humidity', int(payload['Humidity']))
-        )
-    
-        influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
-
-def on_bk_power(power):
-    global influx_api
-
-    power = int(power)
- 
-    point = (
-        Point("BK_POWER")
-        .tag("unit", "W")
-        .field("AVERAGE_PRODUCED_LAST_MINUTE", power)
-    )
-    influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
-
 loop = None
 influx_api = None
 async def main():
@@ -173,9 +135,7 @@ async def main():
     influx_client = influxdb_client.InfluxDBClient(url=config['INFLUXDB_URL'], token=config['INFLUXDB_TOKEN'], org=config['INFLUXDB_ORG'])
     influx_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], message_callback=on_message)
-    mqttclient.subscribe('bk-power/status/switch:0/power/average')
-    mqttclient.subscribe('shellies/ble')
+    mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'])
     
     background.start()
 
