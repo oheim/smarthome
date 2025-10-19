@@ -144,10 +144,9 @@ def is_charging_from_grid():
           |> last()
           |> keep(columns: ["unit", "_field", "_value"])
           |> pivot(rowKey: ["unit"], columnKey: ["_field"], valueColumn: "_value")
-          |> filter(fn: (r) => r.POWER_STORAGE < -4000 and r.POWER_GRID > 1000)
-          |> columns()
+          |> map(fn: (r) => ({_value: r.POWER_STORAGE < -4000 and r.POWER_GRID > 1000}))
     """)
-    return charge_battery_from_grid is not None
+    return charge_battery_from_grid is not None and charge_battery_from_grid
 
 def is_power_expensive():
     # We assume that the heat pump will run for 45 minutes = 3 * 15 minutes.
@@ -156,14 +155,14 @@ def is_power_expensive():
     best_later_price_difference = influx_query_single_value("""
         from(bucket: "%BUCKET%")
           |> range(start: -5m, stop: 2h)
-          |> filter(fn: (r) => r._measurement == "TIBBER" and r._field == "priceInfo")
+          |> filter(fn: (r) => r._measurement == "EPEX" and r._field == "priceInfo" and r.unit == "EUR/MWh")
           |> movingAverage(n: 3)
           |> difference()
           |> limit(n: 3)
           |> cumulativeSum()
           |> min()
     """)
-    return best_later_price_difference is not None and best_later_price_difference < -0.006
+    return best_later_price_difference is not None and best_later_price_difference < -0.05
 
 def is_heat_pump_running():
     power_consumption = influx_query_single_value("""
