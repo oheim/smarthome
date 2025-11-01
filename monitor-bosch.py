@@ -60,45 +60,41 @@ for room in call_api("rooms"):
 
 @background.job(interval = datetime.timedelta(minutes = 1))
 def update_measurement():
-    try:
-        forward_data_points()
-    except Exception as err:
-        logging.exception('Failed to update measurement')
-        return
-
-def forward_data_points():
     global devices
     global rooms
     global influx_api
     
     for device in devices:
-        if 'ValveTappet' in device['deviceServiceIds']:
-            valve_position = call_api('devices/' + device['id'] + '/services/ValveTappet/state')
-            point = (
-                Point("BOSCH")
-                .tag("unit", "%")
-                .field("Ventil/" + device['name'], int(valve_position['position']))
-            )
-            influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
-    
-        if device['deviceModel'] == 'ROOM_CLIMATE_CONTROL':
-            room = rooms[device['roomId']]
+        try:
+            if 'ValveTappet' in device['deviceServiceIds']:
+                valve_position = call_api('devices/' + device['id'] + '/services/ValveTappet/state')
+                point = (
+                    Point("BOSCH")
+                    .tag("unit", "%")
+                    .field("Ventil/" + device['name'], int(valve_position['position']))
+                )
+                influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+        
+            if device['deviceModel'] == 'ROOM_CLIMATE_CONTROL':
+                room = rooms[device['roomId']]
 
-            temperature_level = call_api('devices/' + device['id'] + '/services/TemperatureLevel/state')
-            point = (
-                Point("BOSCH")
-                .tag("unit", "°C")
-                .field("Temperaturen/" + room['name'], float(temperature_level['temperature']))
-            )
-            influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+                temperature_level = call_api('devices/' + device['id'] + '/services/TemperatureLevel/state')
+                point = (
+                    Point("BOSCH")
+                    .tag("unit", "°C")
+                    .field("Temperaturen/" + room['name'], float(temperature_level['temperature']))
+                )
+                influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 
-        #if device['deviceModel'] == 'BOILER':
-        #    boiler = call_api('devices/' + device['id'] + '/services/BoilerHeating/state')
-        #    point = (
-        #        Point("BOSCH")
-        #        .field("Boiler", boiler['heatDemand'] == 'HEAT_DEMAND')
-        #    )
-        #    influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+            #if device['deviceModel'] == 'BOILER':
+            #    boiler = call_api('devices/' + device['id'] + '/services/BoilerHeating/state')
+            #    point = (
+            #        Point("BOSCH")
+            #        .field("Boiler", boiler['heatDemand'] == 'HEAT_DEMAND')
+            #    )
+            #    influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+        except Exception as err:
+            logging.exception('Failed to update measurement')
 
 loop = None
 influx_api = None
@@ -112,7 +108,7 @@ async def main():
     influx_client = influxdb_client.InfluxDBClient(url=config['INFLUXDB_URL'], token=config['INFLUXDB_TOKEN'], org=config['INFLUXDB_ORG'])
     influx_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    forward_data_points()
+    update_measurement()
     background.start()
 
     try:
