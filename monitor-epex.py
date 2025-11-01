@@ -42,7 +42,7 @@ background = timeloop.Timeloop()
 def load_prices(day):
     bidding_zone = "DE-LU"
     timezone = pytz.timezone("Europe/Berlin")
-    start = datetime.datetime.combine(day, datetime.time(), timezone)
+    start = timezone.localize(datetime.datetime.combine(day, datetime.time()))
     start_ts = int(start.timestamp())
     end = start + datetime.timedelta(days=2)
     end_ts = int(end.timestamp())
