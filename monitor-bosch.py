@@ -86,13 +86,13 @@ def update_measurement():
                 )
                 influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 
-            #if device['deviceModel'] == 'BOILER':
-            #    boiler = call_api('devices/' + device['id'] + '/services/BoilerHeating/state')
-            #    point = (
-            #        Point("BOSCH")
-            #        .field("Boiler", boiler['heatDemand'] == 'HEAT_DEMAND')
-            #    )
-            #    influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+            if device['deviceModel'] == 'BOILER':
+                boiler = call_api('devices/' + device['id'] + '/services/BoilerHeating/state')
+                point = (
+                    Point("BOSCH")
+                    .field("Boiler", boiler['heatDemand'] == 'HEAT_DEMAND')
+                )
+                influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
         except Exception as err:
             logging.exception('Failed to update measurement')
 
