@@ -42,8 +42,10 @@ config = dotenv.dotenv_values(sys.argv[1])
 
 background = timeloop.Timeloop()
 
-def read_meter_value():
+last_timestamp = None
+def read_meter_values():
     global config
+    global last_timestamp
     
     s = requests.Session()
     res=s.get(config['METER_URL'], auth=HTTPDigestAuth(config['METER_USERNAME'], config['METER_PASSWORD']), verify=False)
@@ -52,31 +54,44 @@ def read_meter_value():
     soup = BeautifulSoup(res.content, 'html.parser')
     tags = soup.find_all('input')
     token = tags[0].get('value')
+
     action = 'meterform'
     post_data = "tkn=" + token + "&action=" + action 
-
+    
     res = s.post(config['METER_URL'], data=post_data, cookies=cookies, verify=False)
-
+    
     soup = BeautifulSoup(res.content, 'html.parser')
     sel = soup.find(id='meterform_select_meter')
     meter_val = sel.find()
     meter_id = meter_val.attrs.get('value')
-    action = 'showMeterProfile'
-    post_data = "tkn=" + token + "&action=" + action + "&mid=" + meter_id
+
+    action = 'showMeterValues'
+    if last_timestamp is None:
+        start = (datetime.date.today() - datetime.timedelta(weeks=1)).isoformat()
+    else:
+        start = last_timestamp
+    end = datetime.datetime.now().isoformat(sep=' ', timespec='seconds')
+    post_data = "tkn=" + token + "&action=" + action + "&mid=" + meter_id + "&from=" + start + "&to=" + end
 
     res = s.post(config['METER_URL'], data=post_data, cookies=cookies, verify=False)
-
+    
     soup = BeautifulSoup(res.content, 'html.parser')
     table_data = soup.find('table', id="metervalue")
-    result_data = {
-                    'value': table_data.find(id="table_metervalues_col_wert").string,
-                    'unit': table_data.find(id="table_metervalues_col_einheit").string,
-                    'timestamp': table_data.find(id="table_metervalues_col_timestamp").string,
-                    'isvalid': table_data.find(id="table_metervalues_col_istvalide").string,
-                    'name': table_data.find(id="table_metervalues_col_name").string,
-                    'obis': table_data.find(id="table_metervalues_col_obis").string
-                }
+    result_data = []
+    for row in table_data.find_all(id='table_metervalues_line1'):
+        data = {
+                        'value': row.find(id="table_metervalues_col_wert").string,
+                        'unit': row.find(id="table_metervalues_col_einheit").string,
+                        'timestamp': row.find(id="table_metervalues_col_timestamp").string,
+                        'isvalid': row.find(id="table_metervalues_col_istvalide").string,
+                        'name': row.find(id="table_metervalues_col_name").string,
+                        'obis': row.find(id="table_metervalues_col_obis").string
+                    }
+        result_data.append(data)
     s.close()
+    
+    result_data.reverse()
+    
     return result_data
 
 def forward_datapoint(meter_value):
@@ -91,15 +106,15 @@ def forward_datapoint(meter_value):
    
     influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 
-last_timestamp = None
-@background.job(interval = datetime.timedelta(minutes = 10))
+@background.job(interval = datetime.timedelta(minutes = 15))
 def update_measurement():
     global last_timestamp
     
     try:
-        meter_value = read_meter_value()
-        if last_timestamp is None or meter_value['timestamp'] != last_timestamp:
-            forward_datapoint(meter_value)
+        for meter_value in read_meter_values():
+            if last_timestamp is None or meter_value['timestamp'] > last_timestamp:
+                forward_datapoint(meter_value)
+                last_timestamp = meter_value['timestamp']
     except Exception as err:
         logging.exception('Failed to update measurement')
         return
