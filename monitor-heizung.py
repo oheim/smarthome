@@ -89,6 +89,7 @@ async def main():
         content = xmltodict.parse(response)['Content']
         
         names_by_id = {}
+        old_values = {}
         for category in content['item']:
             category_name = category['name']
             if category_name in ('Abschaltungen', 'Fehlerspeicher', 'GLT'):
@@ -107,9 +108,12 @@ async def main():
                 names_by_id[point_id] = category_name + "/" + name
                 
                 publish(point_id, value, unit)
+                old_values[point_id] = value
 
+        counter = 0
         while True:
-            time.sleep(20)
+            time.sleep(2)
+            counter = counter + 1
             await websocket.send('REFRESH')
             response = await websocket.recv()
             values = xmltodict.parse(response)['values']
@@ -119,8 +123,17 @@ async def main():
                     continue
                 value = data_point['value']
                 value, unit = parse_value_with_unit(value)
+                
+                if names_by_id[point_id].startswith('Ablaufzeiten/'):
+                    if counter % 15 != 0:
+                        # runtimes every 30 seconds only
+                        continue
+                elif value == old_values[point_id] and counter % 120 != 0:
+                     # unchanged values every 4 minutes only
+                    continue
 
                 publish(point_id, value, unit)
+                old_values[point_id] = value
             
                     
 influx_client = influxdb_client.InfluxDBClient(url=config['INFLUXDB_URL'], token=config['INFLUXDB_TOKEN'], org=config['INFLUXDB_ORG'])
