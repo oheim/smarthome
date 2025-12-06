@@ -162,7 +162,7 @@ def is_power_expensive():
           |> cumulativeSum()
           |> min()
     """)
-    return best_later_price_difference is not None and best_later_price_difference < -0.05
+    return best_later_price_difference is not None and best_later_price_difference < -0.1
 
 def is_heat_pump_running():
     power_consumption = influx_query_single_value("""
