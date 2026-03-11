@@ -90,7 +90,7 @@ def influx_query_single_value(query):
     for table in result:
         for record in table.records:
             return record.get_value()
-    logging.error("Query returned no result: " + query)
+    logging.debug("Query returned no result: " + query)
     return None
 
 def is_pv_production_high():
@@ -134,6 +134,33 @@ def is_self_sufficient():
           |> last()
     """)
     return self_sufficiency is not None and self_sufficiency > 90
+
+def is_low_heat_demand():
+    ## Prevent the heat pump from starting while there is low flow in the radiators.
+    ##
+    ## Otherwise, the return flow will be dominated by the underfloor heating, which operates at a low temperature.
+    ## The measured return temperature will suggest an empty buffer tank.
+    ## Heating up would then be completed in just a few minutes.
+    boiler_demand = influx_query_single_value("""
+        from(bucket: "%BUCKET%")
+          |> range(start: -5m)
+          |> filter(fn: (r) => r._measurement == "BOSCH")
+          |> filter(fn: (r) => r._field == "Boiler")
+          |> filter(fn: (r) => r._value == false)
+          |> last()
+    """)
+    ## At least one valve must be opened 60 % or higher for 5 minutes straight.
+    max_valve_position = influx_query_single_value("""
+        from(bucket: "%BUCKET%")
+          |> range(start: -5m)
+          |> filter(fn: (r) => r._measurement == "BOSCH")
+          |> filter(fn: (r) => r._field == "Valve")
+          |> filter(fn: (r) => r.unit == "%")
+          |> min()
+          |> group()
+          |> max()
+    """)
+    return (boiler_demand is not None and not boiler_demand) or (max_valve_position is not None and max_valve_position < 60)
 
 def is_charging_from_grid():
     charge_battery_from_grid = influx_query_single_value("""
@@ -185,7 +212,7 @@ def update_sg_ready():
                 new_sg_ready_state = SG_Ready.HIGH
         else:
             # delay start of heat pump while power is expensive
-            if is_power_expensive() and not is_pv_production_high() and (not is_self_sufficient() or not is_battery_well_charged()):
+            if is_low_heat_demand() or (is_power_expensive() and not is_pv_production_high() and (not is_self_sufficient() or not is_battery_well_charged())):
                 new_sg_ready_state = SG_Ready.LOW
 
         set_sg_ready(new_sg_ready_state)
