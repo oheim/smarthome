@@ -46,10 +46,27 @@ def call_api(path):
         'accept': 'application/json'
     }
 
-    response = requests.get(config['BOSCH_SMARTHOME_URL'] + path, headers=headers, cert=(config['BOSCH_SMARTHOME_CLIENT_CERT'], config['BOSCH_SMARTHOME_CLIENT_KEY']), verify=False)
-    response.raise_for_status()
-    return response.json()
-    
+    try:
+        response = requests.get(config['BOSCH_SMARTHOME_URL'] + path, headers=headers, cert=(config['BOSCH_SMARTHOME_CLIENT_CERT'], config['BOSCH_SMARTHOME_CLIENT_KEY']), verify=False)
+        response.raise_for_status()
+        return response.json()
+        
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Connection error for {path}: {e}")
+        return None
+
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Timeout for {path}: {e}")
+        return None
+
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error {e.response.status_code} for {path}")
+        return None
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request failed for {path}: {e}")
+        return None    
+
 devices = []
 for device in call_api("devices"):
     devices.append(device)
@@ -71,18 +88,31 @@ def update_measurement():
                 point = (
                     Point("BOSCH")
                     .tag("unit", "%")
-                    .field("Ventil/" + device['name'], int(valve_position['position']))
+                    .tag("device", device['name'])
+                    .tag("room", rooms[device['roomId']]['name'])
+                    .field("Valve", int(valve_position['position']))
                 )
                 influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+
+            if 'HumidityLevel' in device['deviceServiceIds']:
+                humidity_level = call_api('devices/' + device['id'] + '/services/HumidityLevel/state')
+                point = (
+                    Point("BOSCH")
+                    .tag("unit", "%")
+                    .tag("device", device['name'])
+                    .tag("room", rooms[device['roomId']]['name'])
+                    .field("Humidity", int(humidity_level['humidity']))
+                )
+                influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+
         
             if device['deviceModel'] == 'ROOM_CLIMATE_CONTROL':
-                room = rooms[device['roomId']]
-
                 temperature_level = call_api('devices/' + device['id'] + '/services/TemperatureLevel/state')
                 point = (
                     Point("BOSCH")
                     .tag("unit", "°C")
-                    .field("Temperaturen/" + room['name'], float(temperature_level['temperature']))
+                    .tag("room", rooms[device['roomId']]['name'])
+                    .field("Temperature", float(temperature_level['temperature']))
                 )
                 influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 
