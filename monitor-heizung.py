@@ -25,7 +25,6 @@ import websockets
 import xmltodict
 import re
 import dotenv
-import time
 import influxdb_client
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -112,7 +111,7 @@ async def main():
 
         counter = 0
         while True:
-            time.sleep(2)
+            await asyncio.sleep(1)
             counter = counter + 1
             await websocket.send('REFRESH')
             response = await websocket.recv()
@@ -125,10 +124,10 @@ async def main():
                 value, unit = parse_value_with_unit(value)
                 
                 if names_by_id[point_id].startswith('Ablaufzeiten/'):
-                    if counter % 15 != 0:
+                    if counter % 30 != 0:
                         # runtimes every 30 seconds only
                         continue
-                elif value == old_values[point_id] and counter % 120 != 0:
+                elif value == old_values[point_id] and counter % 240 != 0:
                      # unchanged values every 4 minutes only
                     continue
 
