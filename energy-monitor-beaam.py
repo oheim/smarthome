@@ -52,9 +52,23 @@ def call_api(path):
     headers = {
         'Authorization': 'Bearer ' + config['BEAAM_API_TOKEN']
     }
-    response = requests.get(config['BEAAM_URL'] + path, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    
+    try:
+        response = requests.get(config['BEAAM_URL'] + path, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Connection error for {path}: {e}")
+        return None
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Timeout for {path}: {e}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error {e.response.status_code} for {path}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request failed for {path}: {e}")
+        return None
 
 def load_site():
     global site
@@ -75,15 +89,21 @@ def forward_data_points():
         unit_of_measure = site['energyFlow']['dataPoints'][data_point_id]['unitOfMeasure']
         key = data_point['key']
         value = data_point['value']
-        if value is not None and site['energyFlow']['dataPoints'][data_point_id]['dataType'] == 'NUMBER':
+        timestamp = data_point['ts']
+        if value is None:
+            continue
+
+        if site['energyFlow']['dataPoints'][data_point_id]['dataType'] == 'NUMBER':
             value = float(value)
         
         topic = 'beaam/SITE/' + unit_of_measure + '/' + key
         
         point = (
-            Point("SITE")
+            Point("BEAAM")
+            .tag("type", "SITE")
             .tag("unit", unit_of_measure)
             .field(key, value)
+            .time(timestamp, WritePrecision.MS)
         )
         influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
         
@@ -102,16 +122,21 @@ def forward_data_points():
             unit_of_measure = site['things'][thing_id]['dataPoints'][data_point_id]['unitOfMeasure']
             key = data_point['key']
             value = data_point['value']
-            if value is not None and site['things'][thing_id]['dataPoints'][data_point_id]['dataType'] == 'NUMBER':
+            timestamp = data_point['ts']
+            if value is None:
+                continue
+
+            if site['things'][thing_id]['dataPoints'][data_point_id]['dataType'] == 'NUMBER':
                 value = float(value)
-            
             
             if isinstance(value, (str, int, float, bool)):
                 point = (
-                    Point(thing_type)
+                    Point("BEAAM")
+                    .tag("type", thing_type)
                     .tag("unit", unit_of_measure)
                     .tag("thing_id", thing_id)
                     .field(key, value)
+                    .time(timestamp, WritePrecision.MS)
                 )
                 influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
 

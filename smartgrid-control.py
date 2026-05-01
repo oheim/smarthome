@@ -97,8 +97,9 @@ def is_pv_production_high():
     result = influx_query_single_value("""
         from(bucket: "%BUCKET%")
             |> range(start: -10m)
-            |> filter(fn: (r) => r._measurement == "SITE")
+            |> filter(fn: (r) => r._measurement == "BEAAM")
             |> filter(fn: (r) => r._field == "POWER_PRODUCTION")
+            |> filter(fn: (r) => r.type == "SITE")
             |> filter(fn: (r) => r.unit == "W")
             |> median()
     """)
@@ -108,8 +109,9 @@ def is_battery_well_charged():
     result = influx_query_single_value("""
         from(bucket: "%BUCKET%")
             |> range(start: -10m)
-            |> filter(fn: (r) => r._measurement == "BATTERY")
+            |> filter(fn: (r) => r._measurement == "BEAAM")
             |> filter(fn: (r) => r._field == "STATE_OF_CHARGE")
+            |> filter(fn: (r) => r.type == "BATTERY")
             |> filter(fn: (r) => r.unit == "%")
             |> last()
     """)
@@ -119,8 +121,9 @@ def is_not_self_sufficient():
     self_sufficiency = influx_query_single_value("""
         from(bucket: "%BUCKET%")
           |> range(start: -5m)
-          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r._measurement == "BEAAM")
           |> filter(fn: (r) => r._field == "SELF_SUFFICIENCY")
+          |> filter(fn: (r) => r.type == "SITE")
           |> last()
     """)
     return self_sufficiency is not None and self_sufficiency < 10
@@ -129,8 +132,9 @@ def is_self_sufficient():
     self_sufficiency = influx_query_single_value("""
         from(bucket: "%BUCKET%")
           |> range(start: -5m)
-          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r._measurement == "BEAAM")
           |> filter(fn: (r) => r._field == "SELF_SUFFICIENCY")
+          |> filter(fn: (r) => r.type == "SITE")
           |> last()
     """)
     return self_sufficiency is not None and self_sufficiency > 90
@@ -166,8 +170,9 @@ def is_charging_from_grid():
     charge_battery_from_grid = influx_query_single_value("""
         from(bucket: "%BUCKET%")
           |> range(start: -5m)
-          |> filter(fn: (r) => r._measurement == "SITE")
+          |> filter(fn: (r) => r._measurement == "BEAAM")
           |> filter(fn: (r) => r.unit == "W")
+          |> filter(fn: (r) => r.type == "SITE")
           |> last()
           |> keep(columns: ["unit", "_field", "_value"])
           |> pivot(rowKey: ["unit"], columnKey: ["_field"], valueColumn: "_value")
@@ -192,15 +197,14 @@ def is_power_expensive():
     return best_later_price_difference is not None and best_later_price_difference < -0.1
 
 def is_heat_pump_running():
-    power_consumption = influx_query_single_value("""
+    compressor_is_running = influx_query_single_value("""
         from(bucket: "%BUCKET%")
             |> range(start: -10m)
-            |> filter(fn: (r) => r._measurement == "HEAT_PUMP")
-            |> filter(fn: (r) => r._field == "ELECTRICAL_POWER")
-            |> filter(fn: (r) => r.unit == "W")
+            |> filter(fn: (r) => r._measurement == "HEIZUNG")
+            |> filter(fn: (r) => r._field == "Ausgänge/Verdichter")
             |> last()
     """)
-    return power_consumption is not None and power_consumption > 1000
+    return compressor_is_running is not None and compressor_is_running
 
 @background.job(interval = datetime.timedelta(minutes=10))
 def update_sg_ready():
