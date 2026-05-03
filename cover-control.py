@@ -34,6 +34,10 @@ import dotenv
 import asyncio
 import json
 
+import influxdb_client
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+
+
 from modules import weather, arduinoclient, telegram, mqttclient
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -47,19 +51,29 @@ arduinoclient.set_address(hostname=config['ARDUINO_HOSTNAME'], port=int(config['
 background = timeloop.Timeloop()
 
 schedule = None
-@background.job(interval = datetime.timedelta(hours = 2))
 def update_schedule():
     global schedule
     global config
     global radar_rain
-    
+    global influx_api
+
+    query = """
+      from(bucket: "%BUCKET%")
+        |> range(start: now(), stop: 1d)
+        |> filter(fn: (r) => r._measurement == "MOSMIX_RATING")
+        |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+        |> sort(columns: ["_time"])
+        |> limit(n: 3)
+    """
+
     try:
-        schedule = weather.get_sunscreen_schedule()
-        logging.info('Wettervorhersage aktualisiert')
-        
-        if radar_rain is None:
-            update_radar()
-        
+      result = influx_api.query(org=config['INFLUXDB_ORG'], query=query.replace('%BUCKET%', config['INFLUXDB_BUCKET']))
+      for table in result:
+          new_schedule = []
+          for record in table.records:
+              new_schedule.append(record.values)
+          schedule = new_schedule
+          return
     except:
         logging.exception('Fehler beim Abruf der Wetterdaten')
 
@@ -74,8 +88,12 @@ def update_radar():
     try:
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         soon = now + datetime.timedelta(minutes = 10)
-        close_now = schedule[schedule.index.to_pydatetime() > now]['WEATHER_PREDICTION'].iloc[0] != 'bad'
-        close_soon = schedule[schedule.index.to_pydatetime() > soon]['WEATHER_PREDICTION'].iloc[0] != 'bad'
+        if soon <= schedule[0]["_time"]:
+          soon_idx = 0
+        else:
+          soon_idx = 1
+        close_now = not schedule[0]['badWeather']
+        close_soon = not schedule[soon_idx]['badWeather']
         
         if close_now or close_soon:
             radar_rain = weather.get_current_precipitation()
@@ -103,6 +121,7 @@ def sun_is_not_shining():
 is_closed = None
 window_is_closed = None
 dont_close_window_until = None
+last_processed_sunset = None
 async def apply_schedule():
     global config
     global is_closed
@@ -110,37 +129,41 @@ async def apply_schedule():
     global schedule
     global radar_rain
     global dont_close_window_until
+    global last_processed_sunset
 
     try:
-        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-        # The schedule contains predictions for certain timestamps about the wheather within the 'last 1 hour'.
-        # Thus the prediction for now is the first schedule entry where the timestamp is greater than 'now'.
-        current_schedule = schedule[schedule.index.to_pydatetime() > now]
-        reason = current_schedule['REASON'].iloc[0]
-        extended_reason = current_schedule['EXTENDED_REASON'].iloc[0]
+        update_schedule()
+        
+        reason = schedule[0]['reason']
 
         if is_closed:
-            close_now = current_schedule['WEATHER_PREDICTION'].iloc[0] != 'bad'
+            close_now = not schedule[0]['badWeather']
         else:
-            close_now = current_schedule['WEATHER_PREDICTION'].iloc[0] == 'good' and current_schedule['WEATHER_PREDICTION'].iloc[1] == 'good'
-
             # To prevent unnecessary movement:
             # If the sunscreen will be opened in the next two time frames, we don't close it.
-            if close_now and current_schedule['WEATHER_PREDICTION'].iloc[2] == 'bad':
-                close_now = False
+            close_now = schedule[0]['goodWeather'] and schedule[1]['goodWeather'] and not schedule[2]['badWeather']
 
         # The forecast might be incorrect or outdated.
         # If the radar detects unexpected precipitation, we must open the suncreen.
         if radar_rain:
             close_now = False
             reason = '🌦'
-            extended_reason += '🌦'
 
-        close_window_reason = reason
         if window_is_closed or (dont_close_window_until is not None and dont_close_window_until > now):
             close_window_now = False
         else:
-            close_window_now = radar_rain or current_schedule['CLOSE_WINDOW'].iloc[0]
+            close_window_now = radar_rain or schedule[0]['closeWindow']
+
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        sunset = weather.get_sunset()
+        if now > sunset:
+            close_now = False
+            reason = "🌙"
+            if last_processed_sunset != sunset:
+                close_window_now = True
+                last_processed_sunset = sunset
+
+        close_window_reason = reason
 
         # The sunscreen should be open during low irradiation.
         # An open window may stay open.
@@ -155,7 +178,7 @@ async def apply_schedule():
         #     reason = '🌄'
         #     extended_reason += '🌅'
 
-        logging.info('Status: {}'.format(extended_reason))
+        logging.info('Status: {}'.format(reason))
 
         if not (is_closed == close_now):
             if close_now:
@@ -194,8 +217,6 @@ async def apply_schedule():
 
 async def on_window_command(command, args):
     global window_is_closed
-    global schedule
-    global radar_rain
     global dont_close_window_until
 
 
@@ -273,15 +294,20 @@ def on_message(client, userdata, msg):
 
 
 loop = None
+influx_api = None
 async def main():
     global config
     global loop
+    global influx_api
 
     loop = asyncio.get_running_loop()
 
     mqttclient.connect(server=config['MQTT_SERVER'], user=config['MQTT_USER'], password=config['MQTT_PASSWORD'], message_callback=on_message)
     mqttclient.subscribe(config['MQTT_TOPIC'])
     mqttclient.subscribe('shellies/ble')
+
+    influx_client = influxdb_client.InfluxDBClient(url=config['INFLUXDB_URL'], token=config['INFLUXDB_TOKEN'], org=config['INFLUXDB_ORG'])
+    influx_api = influx_client.query_api()
 
     await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], commands=['fenster_auf', 'fenster_zu'], command_callback=on_window_command)
 
