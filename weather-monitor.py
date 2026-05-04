@@ -50,7 +50,7 @@ def set_location(latitude, longitude):
 
 def get_forecast():
     global local_stations
-    global influx_api
+    global influx_write_api
     
     for local_station in local_stations.all().df_stations['station_id']:
         forecast = local_stations.read_mosmix_large(station_id = local_station, date = DwdForecastDate.LATEST).to_pandas()
@@ -60,12 +60,123 @@ def get_forecast():
         
         forecast['stationId'] = local_station
         
-        influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=forecast, data_frame_measurement_name='MOSMIX', data_frame_tag_columns=['stationId'])
+        influx_write_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=forecast, data_frame_measurement_name='MOSMIX', data_frame_tag_columns=['stationId'])
+
+def update_rating():
+    global influx_query_api
+    
+    query = """
+        import "experimental"
+
+        // Bewerte das Wetter für die Vorhersage
+        PROBABILITY_PRECIPITATION_LAST_1H = "wwp"
+        PRECIPITATION_DURATION = "drr1"
+        PROBABILITY_DRIZZLE_LAST_1H = "wwz"
+        PROBABILITY_FOG_LAST_1H = "wwm"
+        WIND_GUST_MAX_LAST_1H = "fx1"
+        SUNSHINE_DURATION = "sund1"
+        TEMPERATURE_DEW_POINT_MEAN_200 = "td"
+        ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200 = "e_td"
+        TEMPERATURE_AIR_MEAN_200 = "ttt"
+        ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200 = "e_ttt"
+        CLOUD_COVER_EFFECTIVE = "neff"
+
+        mosmixLarge = 
+            from(bucket: "%BUCKET%")
+                |> range(start: now(), stop: 14d)
+                |> filter(fn: (r) => r._measurement == "MOSMIX")
+
+        maxValues =
+            mosmixLarge
+                |> filter(
+                    fn: (r) =>
+                        r._field == PROBABILITY_PRECIPITATION_LAST_1H or
+                        r._field == PRECIPITATION_DURATION or
+                        r._field == PROBABILITY_DRIZZLE_LAST_1H or 
+                        r._field == PROBABILITY_FOG_LAST_1H or
+                        r._field == WIND_GUST_MAX_LAST_1H or 
+                        r._field == SUNSHINE_DURATION or 
+                        r._field == TEMPERATURE_DEW_POINT_MEAN_200 or 
+                        r._field == ERROR_ABSOLUTE_TEMPERATURE_DEW_POINT_MEAN_200 or 
+                        r._field == ERROR_ABSOLUTE_TEMPERATURE_AIR_MEAN_200,
+                )
+                |> group(columns: ["_measurement", "_field", "_time"])
+                |> max()
+
+        minValues =
+            mosmixLarge
+                |> filter(
+                    fn: (r) => 
+                        r._field == TEMPERATURE_AIR_MEAN_200 or 
+                        r._field == CLOUD_COVER_EFFECTIVE,
+                )
+                |> group(columns: ["_measurement", "_field", "_time"])
+                |> min()
+
+        // Aggregate over all nearby stations (use pessimistic values)
+        forecast =
+            union(tables: [minValues, maxValues])
+                |> keep(columns: ["_time", "_field", "_value"])
+                |> group(columns: ["_field"])
+                |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+
+        forecast
+            |> map(
+                fn: (r) => {
+                    sunny = r["sund1"] >= 10 * 60
+                    overcast = r["sund1"] < 5 * 60
+
+                    clear = r["neff"] < 6.0 / 8.0 * 100.0
+                    cloudy = r["neff"] > 7.0 / 8.0 * 100.0
+
+                    dry = r["wwp"] < 40.0 and r["drr1"] < 120 and r["wwz"] < 40.0
+                    rainy = r["wwp"] > 45.0 and r["drr1"] > 600 or r["wwz"] > 45.0
+
+                    arid = r["td"] + r["e_td"] < r["ttt"] - r["e_ttt"] and r["wwm"] < 40.0
+                    dewy = r["td"] > r["ttt"] or r["wwm"] > 45.0
+
+                    warm = r["ttt"] >= 285.15 // 12 °C
+                    cold = r["ttt"] - r["e_ttt"] < 277.15 // 4 °C
+                    
+                    calm = r["fx1"] < 10
+                    windy = r["fx1"] > 11
+
+                    return {
+                        _time: r._time,
+                        goodWeather: sunny and clear and dry and arid and warm and calm,
+                        badWeather: overcast or cloudy or rainy or dewy or cold or windy,
+                        closeWindow: dewy or cold or windy,
+                        reason:
+                            if windy then
+                                "💨"
+                            else if cold then
+                                "❄️"
+                            else if dewy then
+                                "🌫"
+                            else if rainy then
+                                "🌧"
+                            else if cloudy then
+                                "☁️"
+                            else if overcast then
+                                "⛅"
+                            else
+                                " ",
+                    }
+                },
+            )
+            |> map(fn: (r) => ({r with reason: if r.goodWeather then "☀️" else r.reason}))
+            |> experimental.unpivot()
+            |> set(key: "_measurement", value: "MOSMIX_RATING")
+            |> to(bucket: "%BUCKET%")
+    """
+    
+    influx_query_api.query(org=config['INFLUXDB_ORG'], query=query.replace('%BUCKET%', config['INFLUXDB_BUCKET']))
 
 @background.job(interval = datetime.timedelta(hours = 2))
 def update_forecast():
     try:
         get_forecast()
+        update_rating()
         logging.info('Wettervorhersage aktualisiert')
         
     except:
@@ -75,15 +186,18 @@ loop = None
 async def main():
     global config
     global loop
-    global influx_api
+    global influx_write_api
+    global influx_query_api
 
     loop = asyncio.get_running_loop()
 
     influx_client = influxdb_client.InfluxDBClient(url=config['INFLUXDB_URL'], token=config['INFLUXDB_TOKEN'], org=config['INFLUXDB_ORG'])
-    influx_api = influx_client.write_api(write_options=SYNCHRONOUS)
+    influx_write_api = influx_client.write_api(write_options=SYNCHRONOUS)
+    influx_query_api = influx_client.query_api()
 
     set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
     get_forecast()
+    update_rating()
 
     background.start()
 
