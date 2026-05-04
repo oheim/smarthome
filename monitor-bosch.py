@@ -21,6 +21,7 @@ and publish temperature levels and boiler state to InfluxDB
 """
 
 
+import datetime
 import dotenv
 import influxdb_client
 import requests
@@ -35,10 +36,14 @@ import sys
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from modules import weather
+
 urllib3.disable_warnings()
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 
 config = dotenv.dotenv_values("Bosch-Smarthome.env")
+
+weather.set_location(latitude=float(config['LATITUDE']), longitude=float(config['LONGITUDE']))
 
 devices = {}
 rooms = {}
@@ -384,10 +389,16 @@ def long_poll():
 
 
 current_heat_mode = None
+next_sunset = None
 def decide_heat_mode():
     global current_heat_mode
     global influx_query_api
     global config
+    global next_sunset
+    
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+    if next_sunset is not None and now < next_sunset:
+      return
     
     query1 = """
       from(bucket: "%BUCKET%")
@@ -429,6 +440,7 @@ def decide_heat_mode():
                 call_api(f"scenarios/{scenario_id}/triggers", "")
                 logging.info(f"Enable heat mode: {new_heat_mode}")
                 current_heat_mode = new_heat_mode
+                next_sunset = weather.get_next_sunset()
                 return
 
 
