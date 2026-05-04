@@ -42,6 +42,7 @@ config = dotenv.dotenv_values("Bosch-Smarthome.env")
 
 devices = {}
 rooms = {}
+scenarios = {}
 influx_api = None
 poll_id = None
 
@@ -50,7 +51,7 @@ last_values = {}
 refresh_interval = int(config.get('BOSCH_SMARTHOME_REFRESH_INTERVAL', 60))
 
 
-def call_api(path):
+def call_api(path, request_data=None):
     """Synchronous REST API call for initial data loading"""
     global config
     
@@ -60,15 +61,28 @@ def call_api(path):
     }
 
     try:
-        response = requests.get(
-            config['BOSCH_SMARTHOME_URL'] + path, 
-            headers=headers, 
-            cert=(config['BOSCH_SMARTHOME_CLIENT_CERT'], config['BOSCH_SMARTHOME_CLIENT_KEY']), 
-            verify=False,
-            timeout=10
-        )
+        if request_data is None:
+            response = requests.get(
+                config['BOSCH_SMARTHOME_URL'] + path, 
+                headers=headers, 
+                cert=(config['BOSCH_SMARTHOME_CLIENT_CERT'], config['BOSCH_SMARTHOME_CLIENT_KEY']), 
+                verify=False,
+                timeout=10
+            )
+        else:
+            response = requests.post(
+                config['BOSCH_SMARTHOME_URL'] + path, 
+                headers=headers, 
+                cert=(config['BOSCH_SMARTHOME_CLIENT_CERT'], config['BOSCH_SMARTHOME_CLIENT_KEY']), 
+                verify=False,
+                timeout=10,
+                json=request_data
+            )
         response.raise_for_status()
-        return response.json()
+        if request_data is None:
+          return response.json()
+        else:
+          return None
         
     except requests.exceptions.ConnectionError as e:
         logging.error(f"Connection error for {path}: {e}")
@@ -145,7 +159,13 @@ def load_initial_data():
         for room in rooms_list:
             rooms[room['id']] = room
         logging.info(f"Loaded {len(rooms)} rooms")
-
+    
+    scenario_list = call_api("scenarios")
+    if scenario_list:
+        for scenario in scenario_list:
+            scenarios[scenario['id']] = scenario
+        logging.info(f"Loaded {len(scenarios)} scenarios")
+    
 
 def load_initial_measurements():
     """Load initial temperature and boiler state values"""
@@ -363,6 +383,20 @@ def long_poll():
     return False
 
 
+current_heat_mode = None
+def decide_heat_mode():
+    global current_heat_mode
+    
+    new_heat_mode = True
+    if current_heat_mode is None or current_heat_mode != new_heat_mode:
+        for scenario_id, scenario in scenarios.items():
+            if (scenario['name'] == "Heiz-Modus" and new_heat_mode) or (scenario['name'] == "Sommer-Modus" and not new_heat_mode):
+                call_api(f"scenarios/{scenario_id}/triggers", "")
+                logging.info(f"Enable heat mode: {new_heat_mode}")
+                current_heat_mode = new_heat_mode
+                return
+
+
 def main():
     global influx_api
     
@@ -374,8 +408,11 @@ def main():
     )
     influx_api = influx_client.write_api(write_options=SYNCHRONOUS)
     
-    # Load initial device and room data
+    # Load initial device, room, and scenario data
     load_initial_data()
+    
+    # Switch to summer / winter mode
+    decide_heat_mode()
     
     # Register unsubscribe to be called on exit
     atexit.register(unsubscribe)
@@ -407,6 +444,8 @@ def main():
                 if not subscribe():
                     logging.error("Failed to resubscribe")
                     time.sleep(10)
+            
+            decide_heat_mode()
         except KeyboardInterrupt:
             logging.info("Interrupted by user")
             break
