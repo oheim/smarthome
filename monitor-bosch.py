@@ -43,7 +43,7 @@ config = dotenv.dotenv_values("Bosch-Smarthome.env")
 devices = {}
 rooms = {}
 scenarios = {}
-influx_api = None
+influx_write_api = None
 poll_id = None
 
 # Store last known values
@@ -350,7 +350,7 @@ def process_notification(result):
 
 def refresh_measurements():
     """Periodically write all last known values to InfluxDB"""
-    global last_values, influx_api, refresh_interval
+    global last_values, influx_write_api, refresh_interval
     
     while True:
         try:
@@ -360,7 +360,7 @@ def refresh_measurements():
                 logging.info(f"Writing {len(last_values)} measurements to InfluxDB...")
                 for measurement_key, point in last_values.items():
                     try:
-                        influx_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
+                        influx_write_api.write(bucket=config['INFLUXDB_BUCKET'], org=config['INFLUXDB_ORG'], record=point)
                     except Exception as err:
                         logging.exception(f"Failed to write measurement {measurement_key}")
         
@@ -386,8 +386,43 @@ def long_poll():
 current_heat_mode = None
 def decide_heat_mode():
     global current_heat_mode
+    global influx_query_api
+    global config
     
-    new_heat_mode = True
+    query1 = """
+      from(bucket: "%BUCKET%")
+        |> range(start: now(), stop: 24h)
+        |> filter(fn: (r) => r._measurement == "MOSMIX" and r._field == "ttt")
+        |> max()
+        |> group()
+        |> min()
+    """
+
+    query2 = """
+      from(bucket: "%BUCKET%")
+        |> range(start: now(), stop: 24h)
+        |> filter(fn: (r) => r._measurement == "MOSMIX" and r._field == "sund1")
+        |> sum()
+        |> group()
+        |> min()
+    """
+
+    try:
+      result = influx_query_api.query(org=config['INFLUXDB_ORG'], query=query1.replace('%BUCKET%', config['INFLUXDB_BUCKET']))
+      for table in result:
+        for record in table.records:
+          max_temperature = record.get_value()
+      result = influx_query_api.query(org=config['INFLUXDB_ORG'], query=query2.replace('%BUCKET%', config['INFLUXDB_BUCKET']))
+      for table in result:
+        for record in table.records:
+          sun_duration = record.get_value()
+
+    except:
+        logging.exception('Fehler beim Abruf der Wetterdaten')
+        return
+    
+    new_heat_mode = max_temperature < 20.0 or (max_temperature < 24.0 and sun_duration < 8 * 60 * 60)
+    
     if current_heat_mode is None or current_heat_mode != new_heat_mode:
         for scenario_id, scenario in scenarios.items():
             if (scenario['name'] == "Heiz-Modus" and new_heat_mode) or (scenario['name'] == "Sommer-Modus" and not new_heat_mode):
@@ -398,7 +433,8 @@ def decide_heat_mode():
 
 
 def main():
-    global influx_api
+    global influx_write_api
+    global influx_query_api
     
     # Initialize InfluxDB connection
     influx_client = influxdb_client.InfluxDBClient(
@@ -406,7 +442,8 @@ def main():
         token=config['INFLUXDB_TOKEN'], 
         org=config['INFLUXDB_ORG']
     )
-    influx_api = influx_client.write_api(write_options=SYNCHRONOUS)
+    influx_write_api = influx_client.write_api(write_options=SYNCHRONOUS)
+    influx_query_api = influx_client.query_api()
     
     # Load initial device, room, and scenario data
     load_initial_data()
