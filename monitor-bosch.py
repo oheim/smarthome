@@ -407,6 +407,7 @@ def decide_heat_mode():
         |> max()
         |> group()
         |> min()
+        |> map(fn: (r) => ({r with _value: r._value - 273.15}))
     """
 
     query2 = """

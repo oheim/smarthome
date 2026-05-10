@@ -78,6 +78,130 @@ def update_schedule():
         logging.exception('Fehler beim Abruf der Wetterdaten')
 
 
+cooling_mode = None
+next_sunrise = None
+def prepare_cooling_mode():
+    global config
+    global influx_api
+    global cooling_mode
+    global next_sunrise
+
+    query = """
+      maxTemperature =
+          from(bucket: "%BUCKET%")
+              |> range(start: now(), stop: 1d)
+              |> filter(fn: (r) => r._measurement == "MOSMIX")
+              |> filter(fn: (r) => r._field == "ttt")
+              |> max()
+              |> group(columns: ["_measurement", "_field"])
+              |> min()
+              |> map(fn: (r) => ({r with _value: r._value - 273.15}))
+
+      totalSunDuration =
+          from(bucket: "%BUCKET%")
+              |> range(start: now(), stop: 1d)
+              |> filter(fn: (r) => r._measurement == "MOSMIX")
+              |> filter(fn: (r) => r._field == "sund1")
+              |> sum()
+              |> group(columns: ["_measurement", "_field"])
+              |> min()
+
+      union(tables: [maxTemperature, totalSunDuration])
+    """
+
+    forecast = {}
+    try:
+      result = influx_api.query(org=config['INFLUXDB_ORG'], query=query.replace('%BUCKET%', config['INFLUXDB_BUCKET']))
+      for table in result:
+          for record in table.records:
+              forecast[record.get_field()] = record.get_value()
+    except:
+        logging.exception('Fehler beim Abruf der Wetterdaten')
+
+    cooling_mode = forecast['ttt'] >= 24.0 or (forecast['ttt'] >= 20.0 and forecast['sund1'] >= 8 * 60 * 60)
+    next_sunrise = weather.get_next_sunrise()
+
+
+async def activate_ventilation():
+    global cooling_mode
+    global last_processed_sunset
+    
+    if cooling_mode is None or not cooling_mode:
+        return
+    
+    # wait until 2 hours after sunset for reduced insect activity
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+    if last_processed_sunset is None or now < last_processed_sunset + datetime.timedelta(hours=2):
+        return
+
+    # don't open shortly before sunrise
+    sunrise = weather.get_next_sunrise()
+    if now > sunrise - datetime.timedelta(hours = 1):
+        return
+
+    
+    query = """
+          import "math"
+          import "experimental"
+
+          outside =
+              from(bucket: "%BUCKET%")
+                  |> range(start: now(), stop: 1h)
+                  |> filter(fn: (r) => r._measurement == "MOSMIX")
+                  |> filter(fn: (r) => r._field == "td" or r._field == "ttt")
+                  |> group(columns: ["_measurement", "_field"])
+                  |> max()
+                  |> group()
+                  |> map(fn: (r) => ({r with _value: r._value - 273.15}))
+                  |> keep(columns: ["_measurement", "_field", "_value", "_time"])
+
+          inside = 
+              from(bucket: "%BUCKET%")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "SHELLY")
+                  |> filter(fn: (r) => r.addr == "%SHELLY_ADDR%")
+                  |> last()
+                  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+                  |> map(fn: (r) => {
+                    a = 17.27
+                    b = 237.7
+                    alpha = (a * r.Temperature) / (b + r.Temperature) + math.log(x: float(v: r.Humidity) / 100.0)
+                    return {r with DewPoint: b * alpha / (a - alpha)}
+                  })
+                  |> experimental.unpivot()
+
+          union(tables: [inside, outside])
+    """
+    try:
+      result = influx_api.query(org=config['INFLUXDB_ORG'], query=query.replace('%BUCKET%', config['INFLUXDB_BUCKET']).replace("%SHELLY_ADDR%", config['SHELLY_SENSOR']))
+      inside = {}
+      outside = {}
+      for table in result:
+          for record in table.records:
+              if record.get_measurement() == "MOSMIX":
+                  outside[record.get_field()] = record.get_value()
+              else:
+                  inside[record.get_field()] = record.get_value()
+    except:
+        logging.exception('Fehler beim Abruf der Wetterdaten')
+    
+    if len(inside) < 3 or len(outside) < 2:
+        logging.error("Fehlende Messwerte / Wetter-Vorhersage")
+        return
+    
+    if inside["Temperature"] < outside["ttt"] + 1:
+        return
+    
+    if inside["DewPoint"] < outside["td"]:
+        return
+
+    logging.info('Fenster werden automatisch geöffnet')
+    await telegram.bot_send('Die Fenster werden geöffnet 🌬️')
+    arduinoclient.open_window()
+    window_is_closed = False
+    dont_close_window_until = now + datetime.timedelta(minutes = 10)
+
+
 radar_rain = None
 @background.job(interval = datetime.timedelta(minutes = 5))
 def update_radar():
@@ -130,6 +254,7 @@ async def apply_schedule():
     global radar_rain
     global dont_close_window_until
     global last_processed_sunset
+    global next_sunrise
 
     try:
         update_schedule()
@@ -149,21 +274,36 @@ async def apply_schedule():
             close_now = False
             reason = '🌦'
 
-        if window_is_closed or (dont_close_window_until is not None and dont_close_window_until > now):
-            close_window_now = False
-        else:
-            close_window_now = radar_rain or schedule[0]['closeWindow']
-
+        close_window_now = radar_rain or schedule[0]['closeWindow']
+        
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         sunset = weather.get_sunset()
         if now > sunset:
             close_now = False
             reason = "🌙"
-            if last_processed_sunset != sunset:
+            if last_processed_sunset != sunset and dont_close_window_until is None:
                 close_window_now = True
+                prepare_cooling_mode()
                 last_processed_sunset = sunset
 
-        close_window_reason = reason
+
+        if dont_close_window_until is not None and dont_close_window_until > now:
+            close_window_now = False
+        else:
+            close_window_reason = reason
+            
+            if next_sunrise is not None and now > next_sunrise:
+                close_window_now = True
+                close_window_reason = "🌄"
+                next_sunrise = None
+
+            if not close_window_now and window_is_closed:
+                activate_ventilation()
+
+        if window_is_closed:
+            # nothing to do
+            close_window_now = False
+            
 
         # The sunscreen should be open during low irradiation.
         # An open window may stay open.
@@ -189,18 +329,14 @@ async def apply_schedule():
                     await telegram.bot_send('Die Markise wird ausgefahren {}'.format(reason))
             else:
                 logging.info('Markise wird eingefahren %s', reason)
-                if close_window_now:
-                    logging.info('Fenster werden geschlossen')
-                    arduinoclient.close_window()
                 arduinoclient.open_curtain()
                 mqttclient.shelly_command(config['COVER_CONTROL_DEVICE_ID'], config['COVER_CONTROL_COMPONENT_ID'], 'open')
                 if is_closed is not None:
                     if close_window_now and window_is_closed is not None:
                         await telegram.bot_send('Die Markise wird eingefahren und die Fenster werden geschlossen {}'.format(reason))
+                        window_is_closed = None # skip second telegram message below
                     else:
                         await telegram.bot_send('Die Markise wird eingefahren {}'.format(reason))
-                if close_window_now:
-                    window_is_closed = None
             is_closed = close_now
 
         if close_window_now:
@@ -312,6 +448,7 @@ async def main():
     await telegram.bot_start(token=config['TELEGRAM_BOT_TOKEN'], chat_id=config['TELEGRAM_CHAT_ID'], commands=['fenster_auf', 'fenster_zu'], command_callback=on_window_command)
 
     update_schedule()
+    prepare_cooling_mode()
 
     await apply_schedule()
 

@@ -127,3 +127,15 @@ def get_next_sunset():
         sunset = astral.sun.sunset(observer, tomorrow)
     
     return sunset
+
+def get_next_sunrise():
+    global observer
+    
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+    sunrise = astral.sun.sunrise(observer, now.date())
+    
+    if sunrise < now:
+        tomorrow = now.date() + datetime.timedelta(days=1)
+        sunrise = astral.sun.sunrise(observer, tomorrow)
+    
+    return sunrise
